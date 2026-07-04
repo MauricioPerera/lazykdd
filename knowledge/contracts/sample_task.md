@@ -14,6 +14,7 @@ budget:
   max_nesting_depth: 1
 tests: "tests/test_sample.py"
 deps_allowed: []
+forbids: ['network', 'subprocess']
 ---
 
 # Contract: Hello World
@@ -32,6 +33,8 @@ def hello(name: str) -> str:
 
 ## Examples
 - `hello("Agente")` -> `"Hello, Agente"`
+- `hello("Mundo")` -> `"Hello, Mundo"`
+- `hello("")` -> `"Hello, "`
 
 ## Do / Don't
 - DO: Usar f-strings de Python.
