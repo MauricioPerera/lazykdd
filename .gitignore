@@ -1,0 +1,28 @@
+# Entornos y dependencias
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# IDE y Sistema Operativo
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# Artefactos
+dist/
+build/
+*.egg-info/
+coverage/
+
+# .agents es donde residen las reglas de los agentes, por lo tanto NO lo ignoramos.
+# Sin embargo, los logs generados por ellos sí:
+.agents/logs/
