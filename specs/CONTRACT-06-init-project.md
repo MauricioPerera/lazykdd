@@ -61,8 +61,13 @@ declarado ("Use this repository as a Template").
 - **Excepción acotada (acoplamiento conocido, detectado por el orquestador):** los tests
   de infra que usan artefactos de EJEMPLO como fixture del repo real
   (`tests/test_assemble_context.py` con `users_table`, `tests/test_export_gate_contract.py`
-  con `validate-user-record.md`) pueden recibir ÚNICAMENTE un skip-guard mínimo
-  (`skipUnless(<fixture existe>)`) en esos tests puntuales, para que la plantilla íntegra
-  los siga corriendo y un proyecto inicializado los saltee limpio. Cero cambios de lógica.
+  con `validate-user-record.md` Y su test `test_at_repo_root_no_dotdot_and_files_exist`,
+  que exporta un contrato sintético acoplado a `src/users.py`/`tests/test_users.py` reales
+  — hallazgo del experimento pre-implementación del agente, 2ª iteración) pueden recibir
+  ÚNICAMENTE un skip-guard mínimo (`skipUnless(<fixture existe>)`) en esos tests
+  puntuales, para que la plantilla íntegra los siga corriendo y un proyecto inicializado
+  los saltee limpio. Cero cambios de lógica. Total autorizado: 3 guards en
+  `test_export_gate_contract.py`/`test_assemble_context.py` (el de assemble es
+  preventivo: post-init nada falla ahí, el fallback del retriever lo cubre).
 - Python stdlib puro en el target; sin red; sin subprocess en el target (los tests sí).
 - NO commitear. Si algo no se puede sin romper otro criterio, PARAR y reportar.
