@@ -145,7 +145,16 @@ class TestSignAndDeterminism(unittest.TestCase):
         ).hexdigest()[:12]
         self.assertEqual(sign1, expected)
 
+    @unittest.skipUnless(
+        os.path.isfile(os.path.join(ROOT, "knowledge", "data_models",
+                                    "users_table.md")),
+        "ejemplo removido por init: knowledge/data_models/users_table.md")
     def test_determinismo_dos_corridas(self):
+        # Skip-guard preventivo (acoplamiento autorizado por C06): corre el
+        # retriever sobre la KB real con la tarea "documentar la tabla users"
+        # (nodo de ejemplo users_table). Post-init users_table se elimina,
+        # pero el fallback del retriever preserva el determinismo; el guard es
+        # preventivo (post-init nada falla aca) y se saltea limpio.
         contract = {
             "budget": {"max_tokens": 16000, "output_reserve": 3000},
             "slots": [

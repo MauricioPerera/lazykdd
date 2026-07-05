@@ -28,6 +28,10 @@ _TMP_PARENT = ROOT / ".agents" / "logs"
 
 
 def _tmpdir():
+    # .agents/logs/ esta gitignorado -> no existe en un clon fresco. Crearlo
+    # bajo demanda (2 lineas, cero cambio de logica) evita FileNotFoundError
+    # al abrir el TemporaryDirectory. Inocuo cuando ya existe.
+    _TMP_PARENT.mkdir(parents=True, exist_ok=True)
     return tempfile.TemporaryDirectory(dir=str(_TMP_PARENT))
 
 # Carga del modulo por ruta (scripts/ no es paquete).
@@ -127,6 +131,14 @@ class TestAsciiNormalization(unittest.TestCase):
 
 
 class TestPathRewrite(unittest.TestCase):
+    # Skip-guard (acoplamiento autorizado por C06): este test exporta un
+    # contrato sintetico acoplado a src/users.py + tests/test_users.py reales
+    # del repo; post-init esos ejemplos se eliminan -> se saltea limpio. En la
+    # plantilla integra (fixtures presentes) sigue corriendo.
+    @unittest.skipUnless(
+        (ROOT / "src" / "users.py").is_file()
+        and (ROOT / "tests" / "test_users.py").is_file(),
+        "ejemplo removido por init: src/users.py o tests/test_users.py")
     def test_at_repo_root_no_dotdot_and_files_exist(self):
         # Default real: out_dir = raiz del repo. El gate rechaza rutas con
         # ".." (tc-tests-frozen); en la raiz las rutas quedan iguales a las
@@ -244,6 +256,13 @@ class TestFrontmatterPreserved(unittest.TestCase):
 
 
 class TestRealContractExport(unittest.TestCase):
+    # Skip-guards (acoplamiento autorizado por C06): estos tests exportan el
+    # contrato real validate-user-record.md (artefacto de ejemplo del
+    # manifiesto); post-init se elimina -> se saltean limpio. En la plantilla
+    # integra (fixture presente) siguen corriendo.
+    @unittest.skipUnless(
+        (ROOT / "knowledge" / "contracts" / "validate-user-record.md").is_file(),
+        "ejemplo removido por init: knowledge/contracts/validate-user-record.md")
     def test_validate_user_record_export_ascii_and_paths_resolve(self):
         real = ROOT / "knowledge" / "contracts" / "validate-user-record.md"
         self.assertTrue(real.is_file(), "fixture faltante: {}".format(real))
@@ -263,6 +282,9 @@ class TestRealContractExport(unittest.TestCase):
             self.assertTrue(tests_resolved.is_file(),
                             "tests no resuelven a archivo: {}".format(tests_resolved))
 
+    @unittest.skipUnless(
+        (ROOT / "knowledge" / "contracts" / "validate-user-record.md").is_file(),
+        "ejemplo removido por init: knowledge/contracts/validate-user-record.md")
     def test_real_contract_test_command_rewritten_and_runs_from_src(self):
         # Export del contrato real de C04 con out_dir = raiz del repo (el
         # default real): test_command debe reescribirse a

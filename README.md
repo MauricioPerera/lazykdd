@@ -28,6 +28,7 @@ This is a template repository for projects that implement the **Knowledge-Driven
 1. Use this repository as a "Template" on GitHub or clone it locally.
 2. Explore `knowledge/index.md` to see how concepts are structured.
 3. When delegating work to an agent (e.g. Claude, Antigravity, etc.), the agent will read `.agents/AGENTS.md` and immediately understand that it must respect the CCDD contracts of this repository.
+4. Drop the example artifacts and rewire `knowledge/index.md` with `python scripts/init_project.py --apply --name "<Your Project>"` (it removes `src/hello.py`, `src/users.py`, the sample tests, and the OKF example nodes; without `--apply` it only prints the plan).
 
 ### Contract Validation
 
@@ -82,6 +83,7 @@ Este repositorio plantilla es para proyectos que implementan la metodología **K
 1. Usa este repositorio como "Template" en GitHub o clónalo localmente.
 2. Explora `knowledge/index.md` para ver cómo se estructuran los conceptos.
 3. Al delegar trabajo a un agente (ej. Claude, Antigravity, etc.), el agente leerá `.agents/AGENTS.md` y entenderá inmediatamente que debe respetar los contratos CCDD de este repositorio.
+4. Quita los artefactos de ejemplo y reescribe `knowledge/index.md` con `python scripts/init_project.py --apply --name "<Tu Proyecto>"` (elimina `src/hello.py`, `src/users.py`, los tests de ejemplo y los nodos OKF de ejemplo; sin `--apply` solo imprime el plan).
 
 ### Validación de Contratos
 
