@@ -1,0 +1,46 @@
+{
+  "budget": {
+    "max_tokens": 16000,
+    "output_reserve": 3000
+  },
+  "slots": [
+    {
+      "id": "okf_spec",
+      "source": "static",
+      "path": "knowledge/OKF-SPEC.md",
+      "compaction": "none",
+      "sign": true,
+      "priority": 0
+    },
+    {
+      "id": "okf_index",
+      "source": "dynamic",
+      "provider": "okf_index",
+      "compaction": "none",
+      "priority": 10
+    },
+    {
+      "id": "okf_nodes",
+      "source": "dynamic",
+      "provider": "okf_nodes",
+      "compaction": "summarize",
+      "max_tokens": 6000,
+      "priority": 20
+    },
+    {
+      "id": "user_task",
+      "source": "runtime",
+      "compaction": "truncate",
+      "priority": 30
+    }
+  ],
+  "guardrails": {
+    "regex_deny": {
+      "patterns": ["api_key=", "password:", "authorization:"],
+      "on_fail": "abort"
+    },
+    "reference_check": {
+      "on_fail": "report"
+    }
+  }
+}

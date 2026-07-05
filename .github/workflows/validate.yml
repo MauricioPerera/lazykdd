@@ -20,3 +20,6 @@ jobs:
 
       - name: Run unit tests
         run: python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Assemble context (smoke)
+        run: python scripts/assemble_context.py ccdd/context.json "smoke"
