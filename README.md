@@ -42,6 +42,8 @@ Both run locally and in CI (`.github/workflows/validate.yml` runs the validator 
 #### Level 2 — Optional (if the agent environment has it)
 If the agent has the `ccdd-complexity` MCP server available, the real CCDD gate is invoked with its tools `lint_task_contract` (contract lint) and `run_integration_gate` (complexity/integration gate). If it is not available, level 1 is sufficient to consider a contract valid.
 
+The gate runs over the **export** produced by `scripts/export_gate_contract.py` (ASCII normalization + `target`/`tests` rewritten relative to the export): `lint_task_contract` takes the export text + tests, and `run_integration_gate` takes the export path on disk. By default the export is written to the repo root as `<task>.gate.md` (gitignored via `*.gate.md`) so the rewritten paths have no `..`, which the real gate requires.
+
 ### Budget Precedence
 
 - **With CCDD gate available (level 2):** the config signed by the gate takes precedence. The frontmatter `budget` can only be **<=** the signed limits; on any conflict, the gate's signed config wins.
@@ -93,6 +95,8 @@ Ambos corren localmente y en CI (`.github/workflows/validate.yml` ejecuta el val
 
 #### Nivel 2 — Opcional (si el entorno del agente lo tiene)
 Si el agente dispone del servidor MCP `ccdd-complexity`, el gate CCDD real se invoca con sus tools `lint_task_contract` (lint del contrato) y `run_integration_gate` (gate de complejidad/integración). Si no está disponible, el nivel 1 es suficiente para considerar un contrato válido.
+
+El gate se corre sobre el **export** generado por `scripts/export_gate_contract.py` (normalización ASCII + `target`/`tests` reescritos relativos al export): `lint_task_contract` recibe el texto del export + tests, y `run_integration_gate` recibe la ruta del export en disco. Por defecto el export se escribe en la raíz del repo como `<task>.gate.md` (gitignorado vía `*.gate.md`) para que las rutas reescritas no contengan `..`, como exige el gate real.
 
 ### Precedencia del Budget
 
