@@ -59,13 +59,35 @@ CLI: `python scripts/export_gate_contract.py <contrato.md> [--out-dir .agents/ga
 ## Do / Don't
 - DO: tabla de mapeos explicita y documentada para los caracteres tipograficos comunes.
 - DO: conservar los enlaces markdown (el gate no los sigue; solo deben quedar ASCII).
+- DO: antes de reescribir rutas, comparar la unidad (`ntpath.splitdrive`) de
+  `--repo-root` y `--out-dir` resueltos a absolutos; si difieren, fallar como
+  I/O (exit 1) nombrando ambas unidades — no como contrato invalido (exit 2).
 - DON'T: modificar el contrato fuente; red; subprocess; dependencias fuera de stdlib.
 - DON'T: tocar contratos existentes, validadores, ensamblador, src/, ccdd/.
+- DON'T: soportar export cross-drive (rutas absolutas en el export); el gate real
+  las rechaza. Se falla claro en lugar de reescribir.
+
+## Limitaciones
+- **Cross-drive no soportado (Windows).** El export reescribe `target`/`tests`
+  con `os.path.relpath` entre `--repo-root` y `--out-dir`; un `relpath` entre
+  `C:` y `D:` no existe en Windows (`ValueError: path is on mount 'D:', start on
+  mount 'C:'`). Soportarlo exigiria rutas absolutas en el export, que el gate
+  real rechaza (lint `tc-tests-frozen`). Decision de diseño: NO se soporta.
+  Antes de reescribir, `cross_drive_io_error()` (funcion pura, `ntpath` explicito
+  para correr en CI Linux) compara unidades; si difieren, el export lanza
+  `OSError` con mensaje que nombra ambas unidades y la limitacion ("las rutas
+  del export no pueden cruzar unidades de Windows"). El CLI lo mapea a exit 1
+  (I/O), no a exit 2 (contrato invalido). En POSIX no hay unidades
+  (`splitdrive` da `''`) -> el chequeo es no-op. Invariante: el flujo same-drive
+  no cambia (mismo output byte a byte).
 
 ## Tests
 (Los tests estan en `tests/test_export_gate_contract.py`: normalizacion ASCII, mapeos,
 reescritura de rutas, determinismo byte a byte, frontmatter preservado, export del
-contrato real de C04 con rutas que resuelven, exit codes del CLI.)
+contrato real de C04 con rutas que resuelven, exit codes del CLI, y cross-drive —
+funcion pura `cross_drive_io_error` con paths literales estilo Windows via `ntpath`
+(corre en CI Linux) + CLI en host Windows: cross-drive -> exit 1 con mensaje que nombra
+ambas unidades, no exit 2.)
 
 ## Constraints
 - PARAR y reportar si... la normalizacion ASCII destruyera informacion semantica critica

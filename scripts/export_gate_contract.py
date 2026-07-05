@@ -56,6 +56,7 @@ Exit: 0 ok · 1 I/O · 2 contrato invalido.
 """
 
 import argparse
+import ntpath
 import os
 import sys
 import unicodedata
@@ -186,6 +187,38 @@ def _replace_scalar_line(line: str, new_value: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Chequeo cross-drive (Windows): fallo honesto de I/O antes de reescribir rutas
+# ---------------------------------------------------------------------------
+
+def cross_drive_io_error(repo_root_abs: str, out_dir_abs: str):
+    """Devuelve un mensaje de error de I/O si ``repo_root_abs`` y
+    ``out_dir_abs`` residen en unidades de Windows distintas, o ``None`` si
+    comparten unidad (o en POSIX, donde ``splitdrive`` da ``''`` para ambos y
+    el chequeo es no-op).
+
+    Recibe los dos paths YA resueltos a absolutos y SOLO decide (funcion pura:
+    sin I/O, sin entorno). Usa ``ntpath.splitdrive`` explicitamente para que el
+    caso cross-drive sea detectable con paths literales estilo Windows
+    (``C:\\foo`` vs ``D:\\bar``) aun corriendo en el CI Linux — donde
+    ``ntpath.splitdrive`` de paths POSIX devuelve ``''`` y el chequeo no dispara.
+
+    El export reescribe ``target``/``tests`` con ``os.path.relpath`` entre
+    ``repo_root`` y ``out_dir``; un relpath entre ``C:`` y ``D:`` no existe en
+    Windows (``ValueError: path is on mount ...``). Soportarlo exigiria rutas
+    absolutas en el export, que el gate real rechaza. Decision de diseño: no se
+    soporta; se falla claro como I/O (no como contrato invalido).
+    """
+    repo_drive = ntpath.splitdrive(repo_root_abs)[0]
+    out_drive = ntpath.splitdrive(out_dir_abs)[0]
+    if repo_drive and out_drive and repo_drive.lower() != out_drive.lower():
+        return ("las rutas del export no pueden cruzar unidades de Windows: "
+                "repo-root esta en la unidad {!r} y out-dir en la unidad {!r}. "
+                "Use un --out-dir dentro de la unidad del --repo-root."
+                .format(repo_drive, out_drive))
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Reescritura de rutas target/tests relativas al export
 # ---------------------------------------------------------------------------
 
@@ -257,7 +290,10 @@ def export_gate_contract(contract_path: str, out_dir: str,
     ``test_command`` queda ``python ../tests/test_users.py``.
 
     Raises ``ValueError`` si falta frontmatter o las claves ``task``/``target``
-    /``tests``.
+    /``tests``. Raises ``OSError`` si ``repo_root`` y ``out_dir`` estan en
+    unidades de Windows distintas (las rutas del export no pueden cruzar
+    unidades: un ``relpath`` entre ``C:`` y ``D:`` no existe); el CLI lo mapea
+    a exit 1 (I/O), no a contrato invalido.
     """
     with open(contract_path, "r", encoding="utf-8") as fh:
         raw = fh.read()
@@ -281,6 +317,13 @@ def export_gate_contract(contract_path: str, out_dir: str,
 
     repo_root_abs = os.path.abspath(repo_root)
     out_dir_abs = os.path.abspath(out_dir)
+    # Antes de reescribir rutas: si repo_root y out_dir estan en unidades de
+    # Windows distintas, os.path.relpath entre ellas no existe (ValueError).
+    # Se falla como I/O (no contrato invalido): el chequeo es de I/O de rutas,
+    # no de validez del contrato. Funcion pura testeable con paths literales.
+    xd = cross_drive_io_error(repo_root_abs, out_dir_abs)
+    if xd:
+        raise OSError(xd)
     target_rw = _rewrite_path(target, out_dir_abs, repo_root_abs)
     tests_rw = _rewrite_path(tests, out_dir_abs, repo_root_abs)
     test_command_rw = _rewrite_test_command(tests_rw, target_rw)

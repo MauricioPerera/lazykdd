@@ -349,6 +349,82 @@ class TestRealContractExport(unittest.TestCase):
                          "test_command fallo desde src/:\n{}".format(r.stderr))
 
 
+class TestCrossDrive(unittest.TestCase):
+    # T10 (CONTRACT-08): el export reescribe rutas con os.path.relpath entre
+    # repo_root y out_dir; un relpath entre C: y D: no existe en Windows
+    # (ValueError "path is on mount ..."). Antes de reescribir, el export compara
+    # unidades via ntpath.splitdrive y falla como I/O (exit 1), no como contrato
+    # invalido (exit 2). El chequeo vive en una funcion PURA
+    # (cross_drive_io_error) testeable con paths literales estilo Windows, de
+    # modo que el caso cross-drive corra tambien en el CI Linux (ntpath parsea
+    # letras de unidad sin importar el SO; en POSIX los paths reales no tienen
+    # unidad -> splitdrive da '' -> no-op).
+
+    def test_pure_diff_drives_error_names_both(self):
+        # Paths literales Windows: distintas unidades -> error que nombra ambas.
+        msg = egc.cross_drive_io_error(r"C:\repo\kdd", r"D:\out\exports")
+        self.assertIsNotNone(msg)
+        self.assertIn("C:", msg)
+        self.assertIn("D:", msg)
+        self.assertIn("no pueden cruzar unidades", msg)
+
+    def test_pure_same_drive_ok(self):
+        # Misma letra (distinto path) -> None (no error).
+        self.assertIsNone(
+            egc.cross_drive_io_error(r"C:\repo\kdd", r"C:\out\exports"))
+        # Case-insensitive: 'C:' vs 'c:' es la misma unidad.
+        self.assertIsNone(
+            egc.cross_drive_io_error(r"C:\repo", r"c:\out"))
+
+    def test_pure_posix_noop(self):
+        # Paths POSIX reales: splitdrive da '' para ambos -> no-op (el chequeo
+        # no dispara falsos positivos en Linux/Mac).
+        self.assertIsNone(
+            egc.cross_drive_io_error("/home/user/repo", "/tmp/out"))
+        self.assertIsNone(
+            egc.cross_drive_io_error("/var/repo", "/var/out"))
+
+    def test_pure_unc_treated_as_drive(self):
+        # UNC //host/share actua como unidad en ntpath; dos shares distintos ->
+        # error (comportamiento coherente: no hay relpath entre shares).
+        msg = egc.cross_drive_io_error(
+            r"\\host1\share\repo", r"\\host2\share\out")
+        self.assertIsNotNone(msg)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("win"),
+        "cross-drive solo aplica en Windows (POSIX no tiene unidades)")
+    def test_cli_cross_drive_exit1_io_not_contract_invalid(self):
+        # En un host Windows: repo-root y out-dir en unidades distintas -> el
+        # chequeo dispara antes de reescribir/escribir y el CLI lo mapea a
+        # exit 1 (I/O), NO a exit 2 (contrato invalido). El mensaje nombra
+        # ambas unidades y explica la limitacion.
+        #
+        # El out-dir se elige en una unidad DISTINTA a la del repo (ROOT), que
+        # NO necesita existir fisicamente: el error se lanza antes de cualquier
+        # escritura (ntpath.splitdrive parsea la letra sin importar si la
+        # unidad esta montada). Esto hace el test robusto al entorno: corre
+        # igual venga el repo en D: (host real) o en C: (la copia temporal del
+        # test de init, que vive bajo TEMP y arrastra el discover de la copia).
+        import ntpath as _nt
+        root_drive = _nt.splitdrive(str(ROOT))[0] or "C:"
+        other = "D:" if root_drive.upper() != "D:" else "C:"
+        with _tmpdir() as d:
+            d = Path(d)
+            src = _write_contract(d, "xdcli")
+            r = subprocess.run(
+                [sys.executable, str(SCRIPT), str(src),
+                 "--out-dir", other + r"\nonexistent\cross\drive",
+                 "--repo-root", str(ROOT)],
+                capture_output=True, text=True)
+            self.assertEqual(r.returncode, 1, r.stderr)
+            self.assertNotIn("contrato invalido", r.stderr)
+            self.assertIn("no pueden cruzar unidades", r.stderr)
+            # el mensaje nombra ambas unidades (la del repo y la del out-dir)
+            self.assertIn(root_drive, r.stderr)
+            self.assertIn(other, r.stderr)
+
+
 class TestCLIExitCodes(unittest.TestCase):
     def _run(self, *args):
         return subprocess.run(
