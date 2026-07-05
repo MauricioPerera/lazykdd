@@ -35,8 +35,11 @@ Plantillas: `specs/TEMPLATE-CONTRACT.md` y `docs/reports/TEMPLATE-REPORT.md`.
    todo el contexto va en la spec (o se ensambla con el ensamblador de contexto).
    **Red-team de la definición de hecho antes de delegar:** preguntar «¿cómo podría
    cumplirse este comando sin cumplir la intención?» y parchear la definición con lo que
-   aparezca. Casos reales que este paso previene: búsqueda degradada a escaneo completo
-   con tests verdes; conteo de parámetros que evade el budget del gate.
+   aparezca. Y la pregunta inversa: «¿algún check contradice otra orden de la spec?» —
+   un check que choca con una orden propia obliga al agente a un judgment call que la
+   spec prometía no dejarle. Casos reales que este paso previene: búsqueda degradada a
+   escaneo completo con tests verdes; conteo de parámetros que evade el budget del gate;
+   un grep de verificación que matcheaba el valor exigido por otra orden del mismo plan.
 3. **DELEGAR** — un agente efímero por tarea. Tareas que compartan archivos → secuenciales.
 4. **VERIFICAR por artefacto** — la palabra del agente no cuenta: solo salidas reales de
    comandos (validador, tests). El orquestador re-corre los comandos antes de integrar.

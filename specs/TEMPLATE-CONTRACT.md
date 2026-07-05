@@ -48,6 +48,7 @@ FIX/OBJETIVO: <estado final deseado, no pasos. Invariantes que NO pueden cambiar
 - [ ] Todo criterio de aceptación tiene comando + resultado esperado (por máquina, nunca
   "por lectura").
 - [ ] Red-team hecho: ningún camino cumple los comandos sin cumplir la intención (¿evasión
-  del budget? ¿test que pasa en vacío? ¿oráculo que se puede reescribir?).
+  del budget? ¿test que pasa en vacío? ¿oráculo que se puede reescribir?) y ningún check
+  contradice otra orden del propio contrato (eso fuerza un judgment call al agente).
 - [ ] Perímetro de archivos declarado por tarea, disjunto entre tareas concurrentes.
 - [ ] Condiciones de aborto explícitas (ABORTAR SI rellenado, no genérico).
