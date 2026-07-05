@@ -18,6 +18,9 @@ jobs:
       - name: Validate contracts
         run: python scripts/validate_contracts.py knowledge/contracts
 
+      - name: "Validate specs contracts"
+        run: python scripts/validate_specs.py specs
+
       - name: Validate OKF nodes
         run: python scripts/validate_okf.py knowledge
 

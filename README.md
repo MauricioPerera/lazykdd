@@ -36,6 +36,7 @@ Validation has **two levels**. Only level 1 is mandatory and is included in the 
 
 #### Level 1 — Included and mandatory (local + CI)
 - `python scripts/validate_contracts.py knowledge/contracts` — validates frontmatter, mandatory sections, and examples of each contract.
+- `python scripts/validate_specs.py specs` — validates that project-level execution contracts in `specs/` have machine-checkable acceptance criteria, a perimeter, and abort conditions (open vs. closed by `docs/reports/CONTRACT-NN-REPORT.md`).
 - The `test_command` declared in the contract frontmatter — must finish green.
 
 Both run locally and in CI (`.github/workflows/validate.yml` runs the validator and `python -m unittest discover -s tests -p "test_*.py"`).
@@ -91,6 +92,7 @@ La validación tiene **dos niveles**. Solo el nivel 1 es obligatorio y viene inc
 
 #### Nivel 1 — Incluido y obligatorio (local + CI)
 - `python scripts/validate_contracts.py knowledge/contracts` — valida frontmatter, secciones obligatorias y examples de cada contrato.
+- `python scripts/validate_specs.py specs` — valida que los contratos de ejecución de nivel proyecto en `specs/` tengan criterios de aceptación verificables por máquina, perímetro y condiciones de aborto (abierto vs. cerrado según `docs/reports/CONTRACT-NN-REPORT.md`).
 - El `test_command` declarado en el frontmatter del contrato — debe terminar en verde.
 
 Ambos corren localmente y en CI (`.github/workflows/validate.yml` ejecuta el validador y `python -m unittest discover -s tests -p "test_*.py"`).
