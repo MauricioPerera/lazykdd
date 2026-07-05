@@ -193,6 +193,13 @@ _SUMM_MARKER = " [...summarized]"
 def _compact(content, cap, mode):
     """Recorta content a `cap` tokens dejando un marcador.
 
+    IMPORTANTE: ambos modos (``truncate`` y ``summarize``) son corte por
+    caracteres determinista (sin LLM, sin resumen semantico). Solo difieren el
+    marcador que dejan al cortar (``[...truncated]`` vs ``[...summarized]``).
+    El modo ``summarize`` se mantiene aceptado por compatibilidad con la
+    plantilla publicada, pero no resume: corta exactamente igual que
+    ``truncate``; el nombre es historico, no descriptivo.
+
     `cap` >= 1 garantizado por la caller. Reserva espacio para el marcador
     para no exceder el tope de tokens.
     """
@@ -285,10 +292,21 @@ def _reference_check(base_dir, task):
 
 
 def _regex_deny(context, patterns):
-    """Devuelve el primer patron literal que matchea, o None."""
+    """Devuelve el primer patron que matchea, o None.
+
+    Cada patron se evalua con ``re.search`` (stdlib re, determinista): es un
+    patron regex de verdad, no un substring literal. Un patron que no compile
+    lanza ``ValueError`` nombrando el patron (no silencio, no fallback a
+    matching literal).
+    """
     for pat in patterns:
-        if pat in context:
-            return pat
+        try:
+            if re.search(pat, context):
+                return pat
+        except re.error as e:
+            raise ValueError(
+                "regex_deny: patron invalido {!r}: {}".format(pat, e)
+            ) from e
     return None
 
 
@@ -321,6 +339,15 @@ def assemble(contract, task, base_dir):
     guardrails_cfg = contract.get("guardrails", {}) or {}
     regex_cfg = guardrails_cfg.get("regex_deny")
     ref_cfg = guardrails_cfg.get("reference_check")
+
+    # guardrails configurados, en orden fijo (regex_deny, reference_check).
+    # El reporte lista SOLO estos: un guardrail ausente del contrato no se
+    # menciona en el reporte.
+    configured = []
+    if regex_cfg is not None:
+        configured.append("regex_deny")
+    if ref_cfg is not None:
+        configured.append("reference_check")
 
     used = 0
     slot_reports = []
@@ -414,17 +441,18 @@ def assemble(contract, task, base_dir):
             findings.append(finding)
             result = _build_result(slot_reports, context, used, available,
                                    max_tokens, output_reserve,
-                                   findings, abort=True)
+                                   findings, abort=True, configured=configured)
             if on_fail == "abort":
                 raise GuardrailAbort(result, finding)
             # on_fail != abort: solo reporta (no aborta)
 
     return _build_result(slot_reports, context, used, available,
-                         max_tokens, output_reserve, findings, abort=False)
+                         max_tokens, output_reserve, findings, abort=False,
+                         configured=configured)
 
 
 def _build_result(slot_reports, context, used, available, max_tokens,
-                  output_reserve, findings, abort):
+                  output_reserve, findings, abort, configured):
     return {
         "slots": slot_reports,
         "context": context,
@@ -436,6 +464,7 @@ def _build_result(slot_reports, context, used, available, max_tokens,
             "ok": len(findings) == 0 and not abort,
             "findings": findings,
             "abort": abort,
+            "configured": configured,
         },
     }
 
@@ -481,8 +510,12 @@ def format_report(result, contract_path, task, verbose=False):
         for f in gr["findings"]:
             lines.append("  - " + f)
     else:
-        lines.append("  - regex_deny: ok")
-        lines.append("  - reference_check: ok")
+        # Lista SOLO los guardrails configurados en el contrato/config, cada
+        # uno como "name: ok". Un guardrail ausente del contrato no aparece
+        # en el reporte (p.ej. sin regex_deny configurado -> la palabra
+        # regex_deny no se menciona).
+        for name in gr.get("configured", []):
+            lines.append("  - {}: ok".format(name))
     if verbose:
         lines.append("")
         lines.append("--- context ---")

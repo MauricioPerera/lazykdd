@@ -287,6 +287,101 @@ class TestGuardrails(unittest.TestCase):
         self.assertTrue(r["guardrails"]["ok"])
         self.assertEqual(r["guardrails"]["findings"], [])
 
+    # --- CTX-HONESTO (T8): regex real + reporte honesto --------------------
+
+    def test_regex_deny_evalua_con_re_search(self):
+        # 'secret\\s*:' es un patron regex: matchea 'secret :' y 'secret:'.
+        # Como substring literal, la cadena 'secret\\s*:' NO estaria en el
+        # contexto -> el behavior viejo (pat in context) no abortaria. Con
+        # re.search real si aborta. Prueba que regex_deny evalua de verdad.
+        contract = {
+            "budget": {"max_tokens": 10000, "output_reserve": 0},
+            "slots": [
+                {"id": "task", "source": "runtime", "compaction": "none",
+                 "priority": 0},
+            ],
+            "guardrails": {
+                "regex_deny": {"patterns": [r"secret\s*:"], "on_fail": "abort"},
+            },
+        }
+        # 'secret :' (con espacio) matchea por \s*; substring literal no.
+        with self.assertRaises(ac.GuardrailAbort):
+            ac.assemble(contract, "log line: secret : value", self.d)
+        # 'secret:' (sin espacio) tambien matchea por \s* (cero espacios).
+        with self.assertRaises(ac.GuardrailAbort):
+            ac.assemble(contract, "log line: secret:value", self.d)
+
+    def test_regex_deny_patron_invalido_lanza_valueerror(self):
+        # '[' no compila como regex -> ValueError que nombra el patron,
+        # no silencio ni fallback a matching literal.
+        contract = {
+            "budget": {"max_tokens": 10000, "output_reserve": 0},
+            "slots": [
+                {"id": "task", "source": "runtime", "compaction": "none",
+                 "priority": 0},
+            ],
+            "guardrails": {
+                "regex_deny": {"patterns": ["["], "on_fail": "abort"},
+            },
+        }
+        with self.assertRaises(ValueError) as cm:
+            ac.assemble(contract, "tarea", self.d)
+        msg = str(cm.exception)
+        self.assertIn("regex_deny", msg)
+        self.assertIn("[", msg)
+
+    def test_regex_deny_patron_alfanumerico_mismo_veredicto(self):
+        # 'api_key=' no tiene metacaracteres regex: mismo veredicto que con
+        # substring literal (compatibilidad con ccdd/context.json).
+        contract = {
+            "budget": {"max_tokens": 10000, "output_reserve": 0},
+            "slots": [
+                {"id": "task", "source": "runtime", "compaction": "none",
+                 "priority": 0},
+            ],
+            "guardrails": {
+                "regex_deny": {"patterns": ["api_key="], "on_fail": "abort"},
+            },
+        }
+        with self.assertRaises(ac.GuardrailAbort):
+            ac.assemble(contract, "mi api_key=secret123", self.d)
+        # sin la cadena literal presente, no aborta.
+        r = ac.assemble(contract, "tarea sin secreto", self.d)
+        self.assertTrue(r["guardrails"]["ok"])
+
+    def test_reporte_omite_guardrails_no_configurados(self):
+        # Contrato SIN ningun guardrail: el reporte no menciona regex_deny ni
+        # reference_check.
+        contract = {
+            "budget": {"max_tokens": 10000, "output_reserve": 0},
+            "slots": [
+                {"id": "task", "source": "runtime", "compaction": "none",
+                 "priority": 0},
+            ],
+        }
+        r = ac.assemble(contract, "tarea", self.d)
+        report = ac.format_report(r, "contract.json", "tarea")
+        self.assertNotIn("regex_deny", report)
+        self.assertNotIn("reference_check", report)
+        self.assertEqual(r["guardrails"]["configured"], [])
+
+    def test_reporte_lista_solo_guardrails_configurados(self):
+        # Solo reference_check configurado (sin regex_deny): el reporte
+        # menciona 'reference_check: ok' pero NO menciona regex_deny.
+        contract = {
+            "budget": {"max_tokens": 10000, "output_reserve": 0},
+            "slots": [
+                {"id": "task", "source": "runtime", "compaction": "none",
+                 "priority": 0},
+            ],
+            "guardrails": {"reference_check": {"on_fail": "report"}},
+        }
+        r = ac.assemble(contract, "tarea sin refs", self.d)
+        report = ac.format_report(r, "contract.json", "tarea sin refs")
+        self.assertIn("reference_check", report)
+        self.assertNotIn("regex_deny", report)
+        self.assertEqual(r["guardrails"]["configured"], ["reference_check"])
+
 
 class TestContractValidation(unittest.TestCase):
     def test_budget_ausente_lanza_valueerror(self):
