@@ -153,6 +153,32 @@ class TestBrokenLinks(unittest.TestCase):
             findings = vo.validate_okf(d)
             self.assertNotIn('LINK', _rules(findings), msg=findings)
 
+    def test_link_to_existing_non_md_file_is_error(self):
+        # Un .txt existente dentro del bundle NO es un destino valido: ERROR
+        # nombrando el archivo y la extension.
+        with tempfile.TemporaryDirectory() as d:
+            _build_valid_kb(d)
+            _write(d, 'raro.txt', 'no soy markdown\n')
+            _write(d, 'contracts/txtlink.md',
+                   _fm('Task Contract', 'Txt', 'desc', "['x']")
+                   + "Enlace [nota](../raro.txt).\n")
+            findings = vo.validate_okf(d)
+            rules = _rules(findings)
+            self.assertIn('LINK', rules)
+            link = [f for f in findings if f['rule'] == 'LINK'][0]
+            self.assertIn('raro.txt', link['msg'])
+            self.assertIn('.txt', link['msg'])
+
+    def test_link_to_existing_folder_no_error(self):
+        # Una carpeta existente dentro del bundle SI es un destino valido (§5).
+        with tempfile.TemporaryDirectory() as d:
+            _build_valid_kb(d)
+            _write(d, 'contracts/folderlink.md',
+                   _fm('Task Contract', 'Folder', 'desc', "['x']")
+                   + "Enlace a [modelos](../data_models/).\n")
+            findings = vo.validate_okf(d)
+            self.assertNotIn('LINK', _rules(findings), msg=findings)
+
 
 class TestFrontmatter(unittest.TestCase):
     def test_missing_frontmatter(self):

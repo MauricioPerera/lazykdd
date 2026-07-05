@@ -10,8 +10,10 @@ KB (default: knowledge) y valida cada *.md (recursivo) segun OKF-SPEC:
   §3 Tipos: type exactamente uno de 'Task Contract' | 'Data Model' |
        'Architecture' | 'Concept'.
   §4 Enlaces: todo enlace markdown relativo que apunte dentro de knowledge/
-       debe resolver a un archivo o carpeta existente; enlace roto = ERROR.
-       Enlaces externos (http(s), mailto, rutas fuera del bundle) se ignoran.
+       debe resolver a un archivo .md existente o a una carpeta existente;
+       enlace roto = ERROR, y archivo existente con otra extension (p. ej. .txt)
+       = ERROR nombrando archivo y extension. Enlaces externos (http(s),
+       mailto, rutas fuera del bundle) se ignoran.
   §5 Huérfanos: todo nodo alcanzable desde knowledge/index.md — enlace directo
        al archivo o enlace a su carpeta (los .md de esa carpeta quedan
        alcanzables). index.md es la raiz y no requiere frontmatter.
@@ -305,7 +307,15 @@ def _validate_frontmatter(file_rel, text):
 
 
 def _validate_links(file_rel, src_abs, text, kb_abs):
-    """§4: enlaces relativos internos deben resolver a archivo/carpeta existente."""
+    """§4: enlaces relativos internos deben resolver, dentro de knowledge/, a un
+    archivo .md existente o a una carpeta existente.
+
+    - Enlace roto (no existe) -> ERROR.
+    - Carpeta existente -> valido (index.md enlaza carpetas a proposito; §5
+      alcanza los .md hijos via ese enlace).
+    - Archivo existente con extension distinta de .md -> ERROR nombrando el
+      archivo y la extension.
+    """
     findings = []
     for target in _extract_links(text):
         resolved, inside = _resolve_link(src_abs, target, kb_abs)
@@ -318,6 +328,16 @@ def _validate_links(file_rel, src_abs, text, kb_abs):
                 file_rel, 'LINK',
                 "enlace roto: [{}]({}) -> no existe".format(
                     os.path.basename(resolved), target)))
+            continue
+        if os.path.isdir(resolved):
+            continue  # carpeta existente: valido (§5 alcanza via carpeta)
+        ext = os.path.splitext(resolved)[1].lower()
+        if ext != '.md':
+            findings.append(_finding(
+                file_rel, 'LINK',
+                "enlace a archivo no-.md: [{}]({}) -> existe pero es '{}' "
+                "(debe ser .md o carpeta)".format(
+                    os.path.basename(resolved), target, ext)))
     return findings
 
 

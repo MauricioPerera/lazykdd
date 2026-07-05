@@ -37,9 +37,10 @@ CLI: `python scripts/validate_okf.py <knowledge_dir>` — salida y resumen en el
 ## Invariants
 - Reglas: frontmatter presente y parseable con claves `type/title/description/tags`
   (`tags` lista no vacía, valores en minúsculas); `type` ∈ los 4 reconocidos de la spec;
-  enlaces markdown relativos internos a `knowledge/` resuelven a archivo existente;
-  todo nodo alcanzable desde `index.md` (directo o vía enlace a su carpeta) — huérfano =
-  ERROR nombrando el archivo.
+  enlaces markdown relativos internos a `knowledge/` resuelven a un archivo `.md`
+  existente o a una carpeta existente (archivo existente con otra extensión → ERROR
+  nombrando archivo y extensión); todo nodo alcanzable desde `index.md` (directo o
+  vía enlace a su carpeta) — huérfano = ERROR nombrando el archivo.
 - `index.md` es la raíz de alcanzabilidad y no requiere frontmatter (es catálogo, no nodo).
 - Determinista: findings ordenados (por archivo, luego regla); sin red, sin subprocess,
   sin reloj; stdlib puro.
@@ -51,6 +52,9 @@ CLI: `python scripts/validate_okf.py <knowledge_dir>` — salida y resumen en el
 - KB de fixture con `solitario.md` no enlazado desde `index.md` -> finding ERROR regla
   huérfano nombrando `solitario.md`; CLI exit 1.
 - Nodo con `[roto](./no-existe.md)` -> finding ERROR de enlace roto con origen y destino.
+- Nodo con `[nota](./raro.txt)` donde `raro.txt` existe -> finding ERROR de enlace a
+  archivo no-`.md` nombrando `raro.txt` y `.txt`; CLI exit 1.
+- Nodo con `[carpeta](./data_models/)` (carpeta existente) -> sin finding (válido por §5).
 
 ## Do / Don't
 - DO: reusar el enfoque de parseo de frontmatter del validador existente (mismo dialecto).
