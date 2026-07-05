@@ -58,3 +58,16 @@ Si no hay gate disponible, el nivel 1 es suficiente para considerar el contrato 
 2. **validated** — `python scripts/validate_contracts.py knowledge/contracts` (y `lint_task_contract` si hay gate) en verde.
 3. **implemented** — `test_command` del contrato en verde.
 4. **verified** — la salida **REAL** de los comandos se pega en `.agents/logs/<task>-REPORT.md`. Ese directorio está gitignorado a propósito: es evidencia local, no parte del repo.
+
+## 7. Contexto presupuestado (CCDD Nivel 2)
+Antes de delegar la implementación a un agente efímero, ensambla el contexto de la tarea con
+`python scripts/assemble_context.py ccdd/context.json "<tarea>"` (usa `-v` si necesitas el
+contexto completo). El momento es entre **validated** e **implemented**: el contrato ya está
+en verde y vas a pasárselo a un dev, así que primero le preparas su presupuesto de slots.
+
+El reporte de slots/guardrails que devuelve el ensamblador se pega en
+`.agents/logs/<task>-REPORT.md` junto con la evidencia del ciclo de vida (sección 6): forma
+parte de lo que hace que una tarea quede **verified**. Si un guardrail sale con
+`on_fail: abort` (exit 2), la delegación se bloquea — resuélvelo antes de continuar. No
+duplices aquí la doc del ensamblador: la referencia por ruta basta (regla 7 de
+`.agents/AGENTS.md`).
