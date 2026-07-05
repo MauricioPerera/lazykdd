@@ -35,3 +35,19 @@ FIX/OBJETIVO: <estado final deseado, no pasos. Invariantes que NO pueden cambiar
   `knowledge/index.md`; los task contracts pasan el validador.
 - NO commitear (el PM commitea por tarea verificada). Si algo no se puede sin romper otro
   criterio, PARAR y reportar.
+- ABORTAR SI: <condiciones concretas, p.ej. un criterio resulta inalcanzable por una razón
+  legítima; falta una dependencia que no se puede instalar; el fix exige tocar archivos
+  fuera del perímetro> → PARAR, documentar el porqué con evidencia en el reporte y marcar
+  BLOQUEADO. No improvisar ni forzar: si el objetivo era demostrar X y el análisis muestra
+  que X es falso o equivalente, documentarlo con la evidencia ES el entregable válido.
+
+## Checklist antes de delegar
+
+- [ ] RECON corrido: toda suposición del contrato verificada con un check real (comando de
+  suite real del CI, workflows completos — incluidos los condicionales por diff —, deps).
+- [ ] Todo criterio de aceptación tiene comando + resultado esperado (por máquina, nunca
+  "por lectura").
+- [ ] Red-team hecho: ningún camino cumple los comandos sin cumplir la intención (¿evasión
+  del budget? ¿test que pasa en vacío? ¿oráculo que se puede reescribir?).
+- [ ] Perímetro de archivos declarado por tarea, disjunto entre tareas concurrentes.
+- [ ] Condiciones de aborto explícitas (ABORTAR SI rellenado, no genérico).

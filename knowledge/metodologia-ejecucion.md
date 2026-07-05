@@ -25,9 +25,18 @@ Plantillas: `specs/TEMPLATE-CONTRACT.md` y `docs/reports/TEMPLATE-REPORT.md`.
 
 1. **PLAN** — convertir el pedido en contrato de ejecución con tareas atómicas; mostrarlo
    antes de disparar trabajo pesado.
+   **RECON NEEDED:** toda suposición del plan que no esté verificada (comando real de la
+   suite, workflows del CI — incluidos los condicionales por diff que quizá nunca
+   corrieron —, dependencias instaladas, lenguajes soportados por el gate) se lista con
+   el check exacto que la resuelve, y esos checks se corren ANTES de redactar specs.
+   Una suposición sin check es una re-delegación futura.
 2. **SPEC por tarea** — autocontenida y por OBJETIVO (estado final + definición de hecho
    con comando y resultado esperado), no por pasos. El agente efímero no tiene memoria:
    todo el contexto va en la spec (o se ensambla con el ensamblador de contexto).
+   **Red-team de la definición de hecho antes de delegar:** preguntar «¿cómo podría
+   cumplirse este comando sin cumplir la intención?» y parchear la definición con lo que
+   aparezca. Casos reales que este paso previene: búsqueda degradada a escaneo completo
+   con tests verdes; conteo de parámetros que evade el budget del gate.
 3. **DELEGAR** — un agente efímero por tarea. Tareas que compartan archivos → secuenciales.
 4. **VERIFICAR por artefacto** — la palabra del agente no cuenta: solo salidas reales de
    comandos (validador, tests). El orquestador re-corre los comandos antes de integrar.
@@ -48,5 +57,8 @@ humano con diagnóstico. Nunca bucle infinito.
 - El veredicto es del **gate determinista** (validador + tests + CI), nunca del modelo.
 - Un contrato de ejecución no se cierra con criterios sin salida de máquina.
 - Los agentes nunca commitean ni tocan archivos fuera del perímetro declarado en su spec.
+- Toda spec lleva **condiciones de aborto** explícitas (ver `specs/TEMPLATE-CONTRACT.md`):
+  ante un criterio inalcanzable por razón legítima, el agente PARA y documenta con
+  evidencia en vez de improvisar o forzar.
 - El ensamblador de contexto (si está instalado: `scripts/assemble_context.py` +
   `ccdd/context.json`) provee contexto presupuestado y auditable para cada delegación.
