@@ -17,6 +17,11 @@ This is a template repository for projects that implement the **Knowledge-Driven
 - `src/` and `tests/`: Implementation code and automated tests.
 - `scripts/validate_contracts.py`: Deterministic contract validator (stdlib, no LLM, no network).
 - `.agents/`: Local rules for AI agents that clone this repository.
+- `specs/` and `docs/reports/`: Project-level **execution contracts** and their verified,
+  in-repo reports (templates included). Task-level evidence stays local in `.agents/logs/`;
+  see [`knowledge/metodologia-ejecucion.md`](knowledge/metodologia-ejecucion.md).
+- `scripts/assemble_context.py` + `ccdd/context.json`: budgeted, deterministic context
+  assembler over the OKF knowledge base (CCDD Level 2).
 
 ### How to use this template
 
@@ -64,6 +69,11 @@ Este repositorio plantilla es para proyectos que implementan la metodología **K
 - `src/` y `tests/`: Código de implementación y pruebas automatizadas.
 - `scripts/validate_contracts.py`: Validador determinista de contratos (stdlib, sin LLM, sin red).
 - `.agents/`: Reglas locales para agentes de IA que clonen este repositorio.
+- `specs/` y `docs/reports/`: **contratos de ejecución** de nivel proyecto y sus reportes
+  verificados en-repo (plantillas incluidas). La evidencia de tarea sigue siendo local en
+  `.agents/logs/`; ver [`knowledge/metodologia-ejecucion.md`](knowledge/metodologia-ejecucion.md).
+- `scripts/assemble_context.py` + `ccdd/context.json`: ensamblador de contexto presupuestado
+  y determinista sobre la KB OKF (CCDD Nivel 2).
 
 ### Cómo usar esta plantilla
 
