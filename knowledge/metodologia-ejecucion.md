@@ -37,6 +37,13 @@ Plantillas: `specs/TEMPLATE-CONTRACT.md` y `docs/reports/TEMPLATE-REPORT.md`.
    check no se corrió, la spec no afirma: condiciona («si falta X, instalarlo con Y»).
    Caso real: un agente arrancó con `ERR_MODULE_NOT_FOUND` porque la spec afirmaba un
    entorno que no existía; se salvó por iniciativa del agente, no por diseño.
+   La misma regla aplica a la EXISTENCIA de recursos nombrados: un pedido de «crear X»
+   (repo, worker, base de datos) es en realidad «asegurar que X exista con este
+   contenido». Verificar primero con un check barato (`gh repo view`, listado del
+   proveedor, `ls`); si X ya existe, inspeccionar su contenido y reconciliar con lo
+   pedido — nunca crear ni forzar por encima. Caso real: un «crea el repo» sobre un
+   repo que ya existía con más contenido del que se iba a migrar; lo salvó el fallo
+   del proveedor («name already exists»), no el proceso.
 2. **SPEC por tarea** — autocontenida y por OBJETIVO (estado final + definición de hecho
    con comando y resultado esperado), no por pasos. El agente efímero no tiene memoria:
    todo el contexto va en la spec (o se ensambla con el ensamblador de contexto).

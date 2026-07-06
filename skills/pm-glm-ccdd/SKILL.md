@@ -51,6 +51,11 @@ es el juez determinista).
    ambiental se parece a "causa preexistente" y dispara un ABORTAR SI legítimo. Si no corriste el check,
    la spec no afirma: condiciona ("si falta X, instalalo con Y"). Caso real: dev arrancó con
    ERR_MODULE_NOT_FOUND por un entorno afirmado que no existía; se salvó por iniciativa suya, no por diseño.
+   **"Crear X" = "asegurá que X exista con este contenido"** (2026-07-06): antes de crear un recurso
+   nombrado (repo, worker, DB), check barato de existencia (gh repo view, listado del proveedor, ls);
+   si existe, inspeccioná y reconciliá con lo pedido — nunca crees ni fuerces por encima. Caso real:
+   "crea el repo claude-skills" sobre un repo que YA existía con 10 skills respaldadas; lo salvó el
+   "name already exists" del proveedor, no el proceso.
 2. **SPEC por tarea** — para cada tarea redactá un prompt autocontenido para el dev GLM usando la
    **plantilla de spec** (abajo). No la reinventes por sesión.
    **Red-team del HECHO antes de lanzar:** preguntate "¿cómo podría un dev cumplir esta definición de
