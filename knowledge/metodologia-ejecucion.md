@@ -30,6 +30,13 @@ Plantillas: `specs/TEMPLATE-CONTRACT.md` y `docs/reports/TEMPLATE-REPORT.md`.
    corrieron —, dependencias instaladas, lenguajes soportados por el gate) se lista con
    el check exacto que la resuelve, y esos checks se corren ANTES de redactar specs.
    Una suposición sin check es una re-delegación futura.
+   **Las afirmaciones de estado del entorno DENTRO de la spec son suposiciones del plan**
+   y siguen la misma regla: afirmar «node_modules ya está instalado» sin haberlo
+   verificado contamina el diagnóstico del agente — un fallo ambiental se parece a una
+   «causa preexistente» y dispara un ABORTAR SI legítimo, quemando la delegación. Si el
+   check no se corrió, la spec no afirma: condiciona («si falta X, instalarlo con Y»).
+   Caso real: un agente arrancó con `ERR_MODULE_NOT_FOUND` porque la spec afirmaba un
+   entorno que no existía; se salvó por iniciativa del agente, no por diseño.
 2. **SPEC por tarea** — autocontenida y por OBJETIVO (estado final + definición de hecho
    con comando y resultado esperado), no por pasos. El agente efímero no tiene memoria:
    todo el contexto va en la spec (o se ensambla con el ensamblador de contexto).
