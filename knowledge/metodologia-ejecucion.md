@@ -33,6 +33,8 @@ Plantillas: `specs/TEMPLATE-CONTRACT.md` y `docs/reports/TEMPLATE-REPORT.md`.
 2. **SPEC por tarea** — autocontenida y por OBJETIVO (estado final + definición de hecho
    con comando y resultado esperado), no por pasos. El agente efímero no tiene memoria:
    todo el contexto va en la spec (o se ensambla con el ensamblador de contexto).
+   Los **tests congelados** del task contract los autora el orquestador ANTES de delegar,
+   como oráculo independiente; el agente efímero que implementa no los toca ni los reescribe.
    **Red-team de la definición de hecho antes de delegar:** preguntar «¿cómo podría
    cumplirse este comando sin cumplir la intención?» y parchear la definición con lo que
    aparezca. Y la pregunta inversa: «¿algún check contradice otra orden de la spec?» —
@@ -41,9 +43,16 @@ Plantillas: `specs/TEMPLATE-CONTRACT.md` y `docs/reports/TEMPLATE-REPORT.md`.
    escaneo completo con tests verdes; conteo de parámetros que evade el budget del gate;
    un grep de verificación que matcheaba el valor exigido por otra orden del mismo plan.
 3. **DELEGAR** — un agente efímero por tarea. Tareas que compartan archivos → secuenciales.
+   Las tareas en **paralelo** deben declarar en su spec el conjunto de archivos que tocan,
+   y ese conjunto debe ser **disjunto** respecto a otras tareas corriendo al mismo tiempo.
 4. **VERIFICAR por artefacto** — la palabra del agente no cuenta: solo salidas reales de
    comandos (validador, tests). El orquestador re-corre los comandos antes de integrar.
    Todo trade-off declarado por el agente se inspecciona puntualmente.
+   Si el orquestador tiene el gate CCDD disponible en su propia sesión, es más barato y
+   estable que el orquestador corra el gate/validador sobre el artefacto entregado, en vez
+   de exigirle al agente efímero que lo corra (menos superficie de entorno en el agente
+   efímero, mismo veredicto determinista). No aplica cuando la tarea requiere que el propio
+   agente itere contra el gate (funciones nuevas complejas que necesitan varias vueltas).
 5. **COMMIT por tarea verificada** — baseline limpio para la siguiente tarea.
 6. **CIERRE** — suite completa 2× (dos corridas idénticas ≈ sin flaky; un flaky detectado
    es una tarea futura, no se ignora), reporte del contrato en `docs/reports/`, estado en
