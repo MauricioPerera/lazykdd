@@ -240,6 +240,12 @@ ollama launch claude --model glm-5.2:cloud -y -- -p "/goal <condición>" --dange
   DOS veces**: dos corridas idénticas ≈ determinismo; una sola corrida verde no detecta tests flaky
   (verificado: 2 flaky encontrados así). Un test flaky NO se tolera — es una tarea más (arreglar la
   causa raíz, no reintentar hasta verde), porque invalida el veredicto de toda suite futura.
+- **Verificá → limpiá, nunca al revés** (2026-07-06): el artefacto de prueba (token canario, fixture,
+  temporal) se conserva hasta CONFIRMAR el estado esperado; borrarlo antes destruye la única evidencia
+  re-testeable. En sistemas de propagación eventual (secrets de Cloudflare, DNS, caches), un resultado
+  inmediato contrario al esperado NO es fallo: re-verificá con reintentos espaciados (~10-30 s) antes de
+  concluir. Caso real: token de prueba borrado antes del 401 de su revocación — el 200 era propagación
+  y no quedó con qué re-testear; se resolvió con canario nuevo (alta → verificar → revocar → 401 → borrar).
 
 ## Reporte al usuario
 - Respondé cuando haya algo **verificado**, no antes. Formato: completado (con veredicto) / en progreso /

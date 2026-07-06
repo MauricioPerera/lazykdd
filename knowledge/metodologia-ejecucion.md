@@ -78,6 +78,15 @@ Plantillas: `specs/TEMPLATE-CONTRACT.md` y `docs/reports/TEMPLATE-REPORT.md`.
    de exigirle al agente efímero que lo corra (menos superficie de entorno en el agente
    efímero, mismo veredicto determinista). No aplica cuando la tarea requiere que el propio
    agente itere contra el gate (funciones nuevas complejas que necesitan varias vueltas).
+   **El orden es verificar → limpiar, nunca limpiar → verificar:** el artefacto de prueba
+   (credencial canario, fixture, archivo temporal) se conserva hasta CONFIRMAR el estado
+   final esperado; borrarlo antes destruye la única evidencia re-testeable. Y en sistemas
+   de propagación eventual (secrets, DNS, caches), un resultado inmediato contrario al
+   esperado no es fallo: se re-verifica con reintentos espaciados antes de concluir.
+   Caso real: un token de prueba borrado ANTES de observar el 401 de su revocación — el
+   200 inmediato era solo propagación del secret y ya no quedaba con qué re-testear; se
+   resolvió con un canario nuevo (alta → verificar → revocar → verificar 401 → recién
+   entonces borrar).
 5. **COMMIT por tarea verificada** — baseline limpio para la siguiente tarea.
 6. **CIERRE** — suite completa 2× (dos corridas idénticas ≈ sin flaky; un flaky detectado
    es una tarea futura, no se ignora), reporte del contrato en `docs/reports/`, estado en
