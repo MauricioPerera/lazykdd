@@ -88,6 +88,12 @@ lo tanto CI) en rojo.
   - T3: `scripts/validate_specs.py`, `tests/test_validate_specs.py`,
     `knowledge/contracts/validate-specs.md`.
   - T2: `scripts/validate_contracts.py`, `tests/test_validate_contracts.py`.
+    **Enmienda 1 (2026-07-07, hallazgo del dev por cláusula de aborto,
+    reproducido por el PM):** `tests/test_init_project.py` ÚNICAMENTE para
+    mover el `os.unlink` anti-recursión de `test_gates_verdes_post_apply_en_copia`
+    a después de las corridas de los validadores (antes del discover) — el
+    unlink previo dejaba `init-project.md` apuntando a un archivo borrado y
+    el check nuevo de existencia lo detecta. Cero cambio de lógica adicional.
   - T1: `scripts/validate_contracts.py`, `tests/test_validate_contracts.py`, y los 8
     `knowledge/contracts/*.md` SOLO para agregar la clave `tests_sha256` (ningún otro
     cambio en los contratos).
