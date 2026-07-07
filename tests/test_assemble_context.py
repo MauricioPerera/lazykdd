@@ -447,5 +447,257 @@ class TestCLIExitCodes(unittest.TestCase):
         self.assertEqual(r1.stdout, r2.stdout)
 
 
+# ---------------------------------------------------------------------------
+# Tests para CONTRACT-15: ranking, corte por nodo, reporte honesto, chars_per_token
+# ---------------------------------------------------------------------------
+
+class TestRankingAndCutting(unittest.TestCase):
+    """Tests para las 4 decisiones de diseño de CONTRACT-15."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+        os.makedirs(os.path.join(self.d, "knowledge"))
+
+        # Crea 3 nodos para testing:
+        # - high_priority: nombre mencionado en tarea (score=2)
+        # - medium_match: solo match por tag (score=1)
+        # - low_no_match: sin match
+        # Cada nodo: ~2000 chars = ~500 tokens (con chars_per_token=4)
+        _write(self.d, "knowledge/high_priority.md",
+               _node("high_priority", "['tag_x']", "x" * 2000))  # ~500 tokens
+        _write(self.d, "knowledge/medium_match.md",
+               _node("medium_match", "['special_tag']",
+                     "y" * 2000))  # ~500 tokens
+        _write(self.d, "knowledge/low_no_match.md",
+               _node("low_no_match", "['tag_z']", "z" * 2000))  # ~500 tokens
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _nodes(self, task, max_tokens_slot=None):
+        """Helper que retorna el resultado de okf_nodes para una tarea."""
+        contract = {
+            "budget": {"max_tokens": 2000, "output_reserve": 0},
+            "slots": [
+                {"id": "nodes", "source": "dynamic", "provider": "okf_nodes",
+                 "compaction": "summarize", "priority": 0},
+            ],
+        }
+        if max_tokens_slot is not None:
+            contract["slots"][0]["max_tokens"] = max_tokens_slot
+        r = ac.assemble(contract, task, self.d)
+        return r["slots"][0]
+
+    def test_ranking_mencion_gana_a_tag(self):
+        # task menciona "high_priority" (nombre) y "special_tag" (tag de medium_match)
+        # esperado: high_priority (score 2) ANTES que medium_match (score 1) en
+        # el ORDEN DE ENSAMBLADO del contexto (selected es alfabetico, compat)
+        contract = {
+            "budget": {"max_tokens": 2000, "output_reserve": 0},
+            "slots": [
+                {"id": "nodes", "source": "dynamic", "provider": "okf_nodes",
+                 "compaction": "summarize", "priority": 0},
+            ],
+        }
+        r = ac.assemble(contract, "explicar high_priority y special_tag",
+                        self.d)
+        ctx = r["context"]
+        self.assertLess(ctx.index("# high_priority"),
+                        ctx.index("# medium_match"),
+                        "mencion de nombre debe vencer a match por tag")
+        # selected sigue siendo alfabetico con TODOS los recuperados
+        self.assertEqual(r["slots"][0]["selected"],
+                         ["high_priority", "medium_match"])
+
+    def test_ranking_empate_alfabetico(self):
+        # Crea dos nodos con mismo score (ambos solo match por tag)
+        _write(self.d, "knowledge/aaa_tag.md",
+               _node("aaa_tag", "['shared_tag']", "a" * 100))
+        _write(self.d, "knowledge/zzz_tag.md",
+               _node("zzz_tag", "['shared_tag']", "z" * 100))
+        # Task menciona solo el tag (ambos tienen score 1): en el empate el
+        # orden de ensamblado del contexto es alfabetico
+        contract = {
+            "budget": {"max_tokens": 2000, "output_reserve": 0},
+            "slots": [
+                {"id": "nodes", "source": "dynamic", "provider": "okf_nodes",
+                 "compaction": "summarize", "priority": 0},
+            ],
+        }
+        r = ac.assemble(contract, "documento con shared_tag", self.d)
+        ctx = r["context"]
+        self.assertLess(ctx.index("# aaa_tag"), ctx.index("# zzz_tag"),
+                        "en caso de empate de score, alfabetico gana")
+        self.assertEqual(r["slots"][0]["selected"], ["aaa_tag", "zzz_tag"])
+
+    def test_corte_por_nodo_con_presupuesto_justo(self):
+        # Presupuesto justo para ranking con 3 nodos matched.
+        # Crea un tercer nodo que matchea por tag
+        _write(self.d, "knowledge/third_match.md",
+               _node("third_match", "['special_tag']", "t" * 2000))  # ~500 tokens
+        # Task menciona high_priority (score 2), y dos nodos con special_tag (score 1)
+        # Ranking: high_priority, medium_match, third_match (empate 1-1 alfabetico)
+        # max_tokens=900 -> cabe high_priority entero + medium_match compactado,
+        # third_match omitido. Aserciones EXACTAS sobre el REPORTE del slot.
+        slot = self._nodes("high_priority special_tag", max_tokens_slot=900)
+        # selected = universo COMPLETO recuperado (compat, alfabetico)
+        self.assertEqual(slot["selected"],
+                         ["high_priority", "medium_match", "third_match"],
+                         "selected lista TODOS los recuperados (compat)")
+        self.assertEqual(slot.get("cut"), "medium_match",
+                         "el reporte declara el nodo compactado exacto")
+        self.assertEqual(slot.get("omitted_nodes"), ["third_match"],
+                         "el reporte declara los omitidos exactos")
+        # Particion: selected = incluidos enteros | {cut} | omitidos
+        incluidos = (set(slot["selected"]) - {slot["cut"]}
+                     - set(slot["omitted_nodes"]))
+        self.assertEqual(incluidos, {"high_priority"},
+                         "incluidos enteros = selected - cut - omitidos")
+        self.assertEqual(set(slot["selected"]),
+                         incluidos | {slot["cut"]} | set(slot["omitted_nodes"]),
+                         "selected es la union exacta de las tres partes")
+
+    def test_fallback_presupuesto_justo_declara_cut_y_omitidos(self):
+        # Fixture estilo PM: tarea SIN matches (fallback, orden alfabetico)
+        # con presupuesto justo -> el REPORTE igual declara cut y omitted_nodes.
+        # Orden alfabetico: high_priority, low_no_match, medium_match
+        # max_tokens=900 -> high_priority entero, low_no_match cut,
+        # medium_match omitido.
+        slot = self._nodes("tarea sin relacion xyz", max_tokens_slot=900)
+        # selected = universo COMPLETO recuperado (fallback: todos)
+        self.assertEqual(slot["selected"],
+                         ["high_priority", "low_no_match", "medium_match"])
+        self.assertEqual(slot.get("cut"), "low_no_match",
+                         "fallback con presupuesto justo declara cut")
+        self.assertEqual(slot.get("omitted_nodes"), ["medium_match"],
+                         "fallback con presupuesto justo declara omitidos")
+
+    def test_format_report_muestra_cut_y_omitted(self):
+        # La linea del slot en el reporte CLI muestra cut=<id> y omitted=[...]
+        # cuando existen (y no los muestra cuando no)
+        contract = {
+            "budget": {"max_tokens": 2000, "output_reserve": 0},
+            "slots": [
+                {"id": "nodes", "source": "dynamic", "provider": "okf_nodes",
+                 "compaction": "summarize", "max_tokens": 900, "priority": 0},
+            ],
+        }
+        r = ac.assemble(contract, "tarea sin relacion xyz", self.d)
+        report = ac.format_report(r, "contract.json", "tarea sin relacion xyz")
+        self.assertIn("cut=low_no_match", report)
+        self.assertIn("omitted=[medium_match]", report)
+        # Con presupuesto holgado, ninguna de las dos aparece
+        contract["slots"][0]["max_tokens"] = 2000
+        r2 = ac.assemble(contract, "tarea sin relacion xyz", self.d)
+        report2 = ac.format_report(r2, "contract.json",
+                                   "tarea sin relacion xyz")
+        self.assertNotIn("cut=", report2)
+        self.assertNotIn("omitted=", report2)
+
+    def test_reporte_sin_cut_cuando_todo_cabe(self):
+        # Presupuesto holgado: caben todos sin corte
+        slot = self._nodes("fallback", max_tokens_slot=2000)
+        # Todos deben estar seleccionados
+        self.assertEqual(len(slot["selected"]), 3)
+        # No debe haber "cut" ni "omitted_nodes" cuando todo cabe
+        self.assertNotIn("cut", slot,
+                        "no debe haber cut key cuando todo cabe")
+        self.assertNotIn("omitted_nodes", slot,
+                        "no debe haber omitted_nodes key cuando todo cabe")
+
+    def test_fallback_sin_matches_byte_identico(self):
+        # Tarea sin relacion alguna -> fallback a todos con score 0.
+        # Con presupuesto holgado, el contexto queda CONGELADO al comportamiento
+        # previo: concatenacion "\n\n" de TODOS los nodos en orden alfabetico
+        # (byte-identico), sin claves cut/omitted_nodes en el reporte.
+        contract = {
+            "budget": {"max_tokens": 2000, "output_reserve": 0},
+            "slots": [
+                {"id": "nodes", "source": "dynamic", "provider": "okf_nodes",
+                 "compaction": "none", "priority": 0},
+            ],
+        }
+        r1 = ac.assemble(contract, "tarea sin relacion xyz", self.d)
+        r2 = ac.assemble(contract, "tarea sin relacion xyz", self.d)
+        self.assertEqual(r1["context"], r2["context"],
+                        "fallback sin matches debe ser byte-identico 2x")
+        # Congela el output del camino viejo: join alfabetico de todos
+        parts = []
+        for name in ["high_priority", "low_no_match", "medium_match"]:
+            with open(os.path.join(self.d, "knowledge", name + ".md"),
+                      encoding="utf-8") as fh:
+                parts.append(fh.read())
+        expected = "### slot: nodes\n" + "\n\n".join(parts)
+        self.assertEqual(r1["context"], expected,
+                        "fallback holgado byte-identico al comportamiento previo")
+        self.assertEqual(r1["slots"][0]["selected"],
+                         ["high_priority", "low_no_match", "medium_match"])
+        self.assertNotIn("cut", r1["slots"][0])
+        self.assertNotIn("omitted_nodes", r1["slots"][0])
+
+    def test_chars_per_token_configurable(self):
+        # chars_per_token=2 duplica el costo en tokens
+        # Cada nodo: 2000 chars = ~500 tokens con cpt=4, ~1000 tokens con cpt=2
+        # Concat de 3 nodos: ~1559 tokens con cpt=4, ~3118 tokens con cpt=2
+        # Presupuesto: 2000 tokens -> caben los 3 nodos con cpt=4 (sin compaction),
+        # pero se compacta la concat con cpt=2
+        contract_cpt4 = {
+            "budget": {"max_tokens": 2000, "output_reserve": 0},
+            "slots": [
+                {"id": "nodes", "source": "dynamic", "provider": "okf_nodes",
+                 "compaction": "summarize", "priority": 0},
+            ],
+        }
+        contract_cpt2 = {
+            "budget": {"max_tokens": 2000, "output_reserve": 0,
+                      "chars_per_token": 2},
+            "slots": [
+                {"id": "nodes", "source": "dynamic", "provider": "okf_nodes",
+                 "compaction": "summarize", "priority": 0},
+            ],
+        }
+        r4 = ac.assemble(contract_cpt4, "fallback", self.d)
+        r2 = ac.assemble(contract_cpt2, "fallback", self.d)
+        # Con chars_per_token=4, no hay marker de compaction; con cpt=2 si hay
+        has_summarized_cpt4 = "[...summarized]" in r4["context"]
+        has_summarized_cpt2 = "[...summarized]" in r2["context"]
+        self.assertFalse(has_summarized_cpt4,
+                        "con cpt=4 y presupuesto holgado, no debe haber compaction")
+        self.assertTrue(has_summarized_cpt2,
+                       "con cpt=2, el doble de costo obliga a compactar")
+
+    def test_chars_per_token_invalido_lanza_valueerror(self):
+        # chars_per_token=0 o negativo debe lanzar ValueError
+        contract = {
+            "budget": {"max_tokens": 1000, "output_reserve": 0,
+                      "chars_per_token": 0},
+            "slots": [
+                {"id": "nodes", "source": "dynamic", "provider": "okf_nodes",
+                 "compaction": "none", "priority": 0},
+            ],
+        }
+        with self.assertRaises(ValueError) as cm:
+            ac.assemble(contract, "tarea", self.d)
+        msg = str(cm.exception)
+        self.assertIn("chars_per_token", msg)
+
+    def test_determinismo_2x_ranking(self):
+        # Dos corridas con ranking deben ser byte-identicas
+        contract = {
+            "budget": {"max_tokens": 2000, "output_reserve": 0},
+            "slots": [
+                {"id": "nodes", "source": "dynamic", "provider": "okf_nodes",
+                 "compaction": "summarize", "priority": 0},
+            ],
+        }
+        r1 = ac.assemble(contract, "high_priority special_tag", self.d)
+        r2 = ac.assemble(contract, "high_priority special_tag", self.d)
+        a = json.dumps(r1, sort_keys=True)
+        b = json.dumps(r2, sort_keys=True)
+        self.assertEqual(a, b,
+                        "determinismo: dos corridas identicas deben serlo")
+
+
 if __name__ == "__main__":
     unittest.main()

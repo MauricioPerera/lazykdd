@@ -40,9 +40,9 @@ class GuardrailAbort(Exception):
 # Helpers deterministicos
 # ---------------------------------------------------------------------------
 
-def _tokens(text):
-    """1 token ≈ 4 chars (ceil)."""
-    return math.ceil(len(text) / 4)
+def _tokens(text, chars_per_token=4):
+    """1 token ≈ chars_per_token chars (ceil). Default 4."""
+    return math.ceil(len(text) / chars_per_token)
 
 
 def _sha12(text):
@@ -136,6 +136,10 @@ def _validate_contract(contract):
     if max_tokens - output_reserve <= 0:
         raise ValueError(
             "budget: max_tokens - output_reserve debe ser > 0")
+    if "chars_per_token" in budget:
+        cpt = budget.get("chars_per_token")
+        if not isinstance(cpt, int) or isinstance(cpt, bool) or cpt < 1:
+            raise ValueError("budget.chars_per_token debe ser entero >= 1")
 
     slots = contract.get("slots")
     if not isinstance(slots, list) or not slots:
@@ -190,7 +194,7 @@ _TRUNC_MARKER = " [...truncated]"
 _SUMM_MARKER = " [...summarized]"
 
 
-def _compact(content, cap, mode):
+def _compact(content, cap, mode, chars_per_token=4):
     """Recorta content a `cap` tokens dejando un marcador.
 
     IMPORTANTE: ambos modos (``truncate`` y ``summarize``) son corte por
@@ -204,7 +208,7 @@ def _compact(content, cap, mode):
     para no exceder el tope de tokens.
     """
     marker = _TRUNC_MARKER if mode == "truncate" else _SUMM_MARKER
-    max_chars = cap * 4
+    max_chars = cap * chars_per_token
     if len(content) <= max_chars:
         return content  # cabe sin recortar
     room = max_chars - len(marker)
@@ -212,6 +216,83 @@ def _compact(content, cap, mode):
         # cap tan chico que solo entra el marcador (o ni eso)
         return marker[:max_chars]
     return content[:room] + marker
+
+
+# ---------------------------------------------------------------------------
+# Helpers: per-node cutting para okf_nodes
+# ---------------------------------------------------------------------------
+
+def _assemble_okf_nodes(base_dir, task, cap, comp, chars_per_token):
+    """Ensambla okf_nodes con ranking y corte por nodo.
+
+    El corte por nodo aplica SIEMPRE (tambien en el fallback sin matches):
+    cuando todo cabe, el resultado es la misma concatenacion separada por
+    linea en blanco que el comportamiento previo (byte-identico); cuando no
+    cabe, el primero que no entra se compacta (marcador incluido) y el resto
+    se omite.
+
+    Retorna dict con:
+      - raw: contenido concatenado incluido (ya <= cap)
+      - selected: lista alfabetica de TODOS los ids recuperados por el
+        retriever (compat con el reporte previo, redundante a proposito);
+        cut/omitted_nodes declaran aparte que le paso a cada parte
+      - cut: id compactado (o None)
+      - omitted_nodes: lista de ids omitidos (o None)
+    """
+    scored_rels, ids = _retrieve_okf_nodes(base_dir, task)
+
+    parts = []
+    used = 0
+    selected_ids = []
+    cut_id = None
+    omitted_ids = []
+
+    for idx, (score, name, rel) in enumerate(scored_rels):
+        try:
+            node_content = _read_file(base_dir, rel)
+        except OSError:
+            continue
+
+        node_id = os.path.splitext(os.path.basename(rel))[0]
+        node_tokens = _tokens(node_content, chars_per_token)
+
+        # Cuenta el separador "\n\n" si no es el primer nodo
+        separator_tokens = 0 if not parts else _tokens("\n\n", chars_per_token)
+
+        # ¿Entra entero con el separador?
+        if used + separator_tokens + node_tokens <= cap:
+            parts.append(node_content)
+            used += separator_tokens + node_tokens
+            selected_ids.append(node_id)
+        else:
+            # No entra entero. ¿Cabe compactado?
+            remaining = cap - used - separator_tokens
+            if remaining > 0 and comp != "none":
+                # Se compacta este (cut) y el resto se omite
+                compacted = _compact(node_content, remaining, comp,
+                                     chars_per_token)
+                parts.append(compacted)
+                used += separator_tokens + _tokens(compacted, chars_per_token)
+                cut_id = node_id
+                for _, _, rest_rel in scored_rels[idx + 1:]:
+                    omitted_ids.append(
+                        os.path.splitext(os.path.basename(rest_rel))[0])
+            else:
+                # Sin compaction o sin presupuesto: este y el resto se omiten
+                omitted_ids.append(node_id)
+                for _, _, rest_rel in scored_rels[idx + 1:]:
+                    omitted_ids.append(
+                        os.path.splitext(os.path.basename(rest_rel))[0])
+            break
+
+    raw = "\n\n".join(parts) if parts else ""
+
+    return {
+        "raw": raw,
+        "selected": sorted(ids),  # TODOS los recuperados, alfabetico (compat)
+        "cut": cut_id,
+        "omitted_nodes": omitted_ids if omitted_ids else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -240,16 +321,18 @@ def _list_okf_nodes(base_dir):
 
 
 def _retrieve_okf_nodes(base_dir, task):
-    """Retriever determinista.
+    """Retriever con ranking determinista.
 
-    Nodo relevante si su nombre de archivo (sin .md) aparece en la tarea
-    (case-insensitive, substring) o algun valor de tags del frontmatter
-    aparece como palabra en la tarea. Sin matches -> todos. Orden alfabetico.
-    Devuelve (lista_rutas_relativas, lista_ids).
+    Calcula score por nodo: mencionar el nombre de archivo (sin .md) en la
+    tarea cuenta 2 puntos; cada tag del frontmatter que matchea como palabra
+    en la tarea cuenta 1. Ordena por score descendente, empate por nombre
+    alfabetico. Sin matches -> todos con score 0 (fallback, orden alfabetico).
+    Retorna (scored_rels, ids) donde scored_rels es lista de (score, name, rel).
     """
     task_lower = task.lower()
     nodes = _list_okf_nodes(base_dir)
-    selected = []
+    scored_nodes = []  # (score, name, rel)
+
     for rel in nodes:
         name = os.path.splitext(os.path.basename(rel))[0]
         try:
@@ -257,21 +340,39 @@ def _retrieve_okf_nodes(base_dir, task):
         except OSError:
             continue
         tags = _parse_tags(content)
-        match = False
+        score = 0
+
+        # File name mention: 2 points
         if name and name.lower() in task_lower:
-            match = True
-        if not match:
-            for tag in tags:
-                if tag and re.search(r"\b" + re.escape(tag) + r"\b",
-                                     task, re.IGNORECASE):
-                    match = True
-                    break
-        if match:
-            selected.append(rel)
-    if not selected:
-        selected = nodes
+            score += 2
+
+        # Each matching tag: 1 point
+        for tag in tags:
+            if tag and re.search(r"\b" + re.escape(tag) + r"\b",
+                                task, re.IGNORECASE):
+                score += 1
+
+        # Record: (score, name, rel)
+        scored_nodes.append((score, name, rel))
+
+    # Classify: matched (score > 0) vs fallback (score == 0)
+    matched = [n for n in scored_nodes if n[0] > 0]
+    fallback = [n for n in scored_nodes if n[0] == 0]
+
+    # Sort matched by score desc, then by name asc
+    matched.sort(key=lambda n: (-n[0], n[1]))
+    # Sort fallback alphabetically
+    fallback.sort(key=lambda n: n[1])
+
+    # Si hay matches, devuelve solo matched (compat con viejo behavior)
+    # Si no hay matches, devuelve todos (fallback, alfabetico)
+    if matched:
+        selected = matched
+    else:
+        selected = fallback
+
     return selected, [os.path.splitext(os.path.basename(r))[0]
-                      for r in selected]
+                      for _, _, r in selected]
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +420,8 @@ def assemble(contract, task, base_dir):
 
     Devuelve dict con: slots (lista de reportes por slot: id, priority,
     status included|omitted, tokens, compaction, sign si hay, selected si
-    hay), context (str), used, available, guardrails {ok, findings}.
+    hay, cut y omitted_nodes si aplica), context (str), used, available,
+    guardrails {ok, findings}.
 
     Lanza ``ValueError`` ante contrato invalido. Lanza ``GuardrailAbort``
     (lleva el result parcial) si un guardrail on_fail=abort se dispara
@@ -329,6 +431,7 @@ def assemble(contract, task, base_dir):
     budget = contract["budget"]
     max_tokens = budget["max_tokens"]
     output_reserve = budget["output_reserve"]
+    chars_per_token = budget.get("chars_per_token", 4)
     available = max_tokens - output_reserve
 
     # orden estable: por priority ascendente, luego indice original
@@ -375,6 +478,8 @@ def assemble(contract, task, base_dir):
         # obtener contenido crudo segun source
         raw = ""
         selected = None
+        cut_node = None
+        omitted_nodes = None
         try:
             if s["source"] == "static":
                 raw = _read_file(base_dir, s["path"])
@@ -382,12 +487,12 @@ def assemble(contract, task, base_dir):
                 if s["provider"] == "okf_index":
                     raw = _read_file(base_dir, "knowledge/index.md")
                 elif s["provider"] == "okf_nodes":
-                    rels, ids = _retrieve_okf_nodes(base_dir, task)
-                    selected = sorted(ids)
-                    parts = []
-                    for rel in rels:
-                        parts.append(_read_file(base_dir, rel))
-                    raw = "\n\n".join(parts)
+                    result = _assemble_okf_nodes(base_dir, task, cap, comp,
+                                                 chars_per_token)
+                    raw = result["raw"]
+                    selected = result["selected"]
+                    cut_node = result["cut"]
+                    omitted_nodes = result["omitted_nodes"]
             elif s["source"] == "runtime":
                 raw = task
         except OSError as e:
@@ -396,6 +501,10 @@ def assemble(contract, task, base_dir):
 
         if selected is not None:
             report["selected"] = selected
+        if cut_node is not None:
+            report["cut"] = cut_node
+        if omitted_nodes is not None:
+            report["omitted_nodes"] = omitted_nodes
 
         # decidir inclusion
         if cap <= 0:
@@ -403,17 +512,17 @@ def assemble(contract, task, base_dir):
         elif min_tokens and cap < min_tokens:
             pass  # por debajo del piso
         else:
-            raw_tokens = _tokens(raw)
+            raw_tokens = _tokens(raw, chars_per_token)
             if raw_tokens <= cap:
                 content = raw
             else:
                 if comp == "none":
                     content = None  # no se recorta -> no cabe
                 else:
-                    content = _compact(raw, cap, comp)
+                    content = _compact(raw, cap, comp, chars_per_token)
             if content is not None:
                 report["status"] = "included"
-                report["tokens"] = _tokens(content)
+                report["tokens"] = _tokens(content, chars_per_token)
                 if do_sign:
                     report["sign"] = _sha12(content)
                 used += report["tokens"]
@@ -482,6 +591,10 @@ def _slot_line(s):
         line += "  sign=" + s["sign"]
     if "selected" in s:
         line += "  selected=[" + ",".join(s["selected"]) + "]"
+    if "cut" in s:
+        line += "  cut=" + s["cut"]
+    if "omitted_nodes" in s:
+        line += "  omitted=[" + ",".join(s["omitted_nodes"]) + "]"
     return line
 
 

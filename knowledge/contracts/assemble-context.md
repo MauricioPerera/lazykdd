@@ -13,7 +13,7 @@ budget:
   max_cyclomatic_complexity: 10
   max_nesting_depth: 4
 tests: "tests/test_assemble_context.py"
-tests_sha256: "ddcc59a42458133cd46633e50fbe527cbc687ab0bc698be85e178a1900d3c07f"
+tests_sha256: "1a9f103cc9ad634ca5df39e3573fc617612bd7fbfac3d7df03856e8825dd4801"
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---
@@ -49,9 +49,22 @@ inválido o guardrail abort · 1 I/O.
   `summarize` se mantiene aceptado por compatibilidad con la plantilla publicada, pero el
   nombre es histórico, no descriptivo: no resume, corta igual que `truncate`.
 - `sign: true` → sha256 del contenido compactado, primeros 12 hex.
-- Providers dinámicos: `okf_index` (knowledge/index.md) y `okf_nodes` (nodos seleccionados
-  por retriever determinista: mención literal del nombre de archivo o de valores de `tags`
-  del frontmatter en la tarea; sin matches → todos, compactados; orden alfabético estable).
+- Providers dinámicos:
+  - `okf_index`: knowledge/index.md.
+  - `okf_nodes`: nodos con ranking determinista: score = 2 puntos por mención literal del
+    nombre de archivo (sin .md) + 1 punto por cada tag del frontmatter que matchea como
+    palabra en la tarea. Ordenados score desc, empate alfabético. Sin matches → fallback
+    (todos, score 0, alfabético). Corte por nodo (no por concatenación): nodos enteros se
+    incluyen mientras quepan; el primero que no cabe se compacta según modo del slot
+    (`truncate`/`summarize`, con marcador); los siguientes se omiten.
+  - Reporte honesto: slot `okf_nodes` declara `selected` = TODOS los nodos recuperados por
+    el retriever, `sorted()` alfabético (compat: como el reporte previo, redundante a
+    propósito — es el universo recuperado), y además `cut` (el nodo compactado, si lo hubo)
+    y `omitted_nodes` (lista de omitidos, si los hubo) como subconjuntos declarados aparte;
+    claves ausentes cuando no aplica. Partición: selected = incluidos enteros ∪ {cut} ∪
+    omitted_nodes.
+  - `budget.chars_per_token` opcional (entero ≥1, default 4): multiplica el costo en tokens;
+    compartido entre `_tokens` y `_compact` desde UN solo lugar. Inválido → `ValueError`.
 - Guardrails: `regex_deny` (cada patrón se evalúa con `re.search` de stdlib sobre el
   contexto ensamblado — es un patrón regex de verdad, no un substring literal; un patrón que
   no compila → `ValueError` que nombra el patrón, sin silencio ni fallback a literal;
@@ -72,6 +85,14 @@ inválido o guardrail abort · 1 I/O.
 - `assemble(contract_sin_guardrails, "tarea", ".")` -> el reporte no menciona `regex_deny`
   ni `reference_check` (no configurados); `guardrails: ok` sin sub-líneas.
 - Dos invocaciones idénticas del CLI -> stdout byte a byte idéntico.
+- **Ranking (C15)**: task "explicar architecture_overview" → `okf_nodes` selecciona antes nodos
+  cuyo nombre matchea (score 2) que nodos que matchean solo por tags (score 1). Empate →
+  alfabético.
+- **Per-node cutting (C15)**: presupuesto justo (p.ej. 900 tokens, 3 nodos de 500 cada uno)
+  → primero entra nodo score 2 (entero), segundo aparece en `cut` (compactado), tercero en
+  `omitted_nodes`. Sin presupuesto exigente → `cut` y `omitted_nodes` ausentes.
+- **chars_per_token (C15)**: `budget.chars_per_token=2` cuesta el doble → menos nodos caben.
+  Default 4 (1 token ≈ 4 chars). Inválido (p.ej. 0, -1) → `ValueError` que nombra la clave.
 
 ## Do / Don't
 - DO: portar la semántica del patrón probado (prioridad/presupuesto/compaction/firma).
