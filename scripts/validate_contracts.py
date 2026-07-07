@@ -311,7 +311,7 @@ def validate_file(path, repo_root=None):
         if not _is_valid_hex_hash(tests_sha256):
             findings.append(Finding(
                 rel, 'FM_TESTS_FROZEN',
-                "tests_sha256 con formato inválido (debe ser 64 chars hex lowercase): {!r}"
+                "tests_sha256 con formato invalido (debe ser 64 chars hex lowercase): {!r}"
                 .format(tests_sha256)))
         # Si tests existe, validar que el hash coincida
         elif 'tests' in data and data['tests']:

@@ -27,6 +27,9 @@ jobs:
       - name: Validate OKF nodes
         run: python scripts/validate_okf.py knowledge
 
+      - name: Lint ASCII scripts
+        run: python scripts/lint_ascii.py scripts
+
       - name: Run unit tests (1/2)
         run: python -m unittest discover -s tests -p "test_*.py"
 

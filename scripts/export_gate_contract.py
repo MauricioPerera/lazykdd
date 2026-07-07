@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ascii-lint: skip-file  # tabla _EXPLICIT_MAP mapea tipograficos unicode a ASCII
 """Exportador de contratos KDD a su variante gate-nativa (CCDD nivel 2).
 
 El gate CCDD real (servidor MCP ``ccdd-complexity``) exige ASCII estable y

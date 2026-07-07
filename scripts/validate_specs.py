@@ -36,7 +36,7 @@ import sys
 # Constantes
 # ---------------------------------------------------------------------------
 
-CRITERIOS_SECTION = 'Criterios de aceptación'
+CRITERIOS_SECTION = 'Criterios de aceptación'  # ascii: allow
 RESTRICCIONES_SECTION = 'Restricciones'
 
 # CONTRACT-NN -> prefix = 'CONTRACT-NN'

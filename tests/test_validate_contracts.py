@@ -349,7 +349,7 @@ class TestTestsSha256Validation(unittest.TestCase):
         errors = [f for f in findings if f.level == 'ERROR']
         fm_tests_frozen_errors = [f for f in errors if f.rule == 'FM_TESTS_FROZEN']
         self.assertTrue(len(fm_tests_frozen_errors) >= 1, msg=[str(f) for f in findings])
-        self.assertIn('formato inválido', fm_tests_frozen_errors[0].message)
+        self.assertIn('formato invalido', fm_tests_frozen_errors[0].message)
 
     def test_sha256_invalid_hex_characters(self):
         """Hash con caracteres no-hex → ERROR"""

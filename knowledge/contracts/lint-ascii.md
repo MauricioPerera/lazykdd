@@ -13,7 +13,7 @@ budget:
   max_cyclomatic_complexity: 10
   max_nesting_depth: 4
 tests: "tests/test_lint_ascii.py"
-tests_sha256: "9c018ea0334eacdf2501ce2c41f031bca2192202155a0c08fefdadbd2fcd3108"
+tests_sha256: "bf7921b3b7f9fa2dd0b8a4e284e2125b080426e69eeca58ee72f9ef82e6381a4"
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---

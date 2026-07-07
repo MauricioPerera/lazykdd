@@ -75,6 +75,11 @@ FIX/OBJETIVO:
   `scripts/export_gate_contract.py` (SOLO agregar el pragma skip-file con su comentario),
   `.github/workflows/validate.yml` (SOLO agregar el paso),
   `knowledge/contracts/lint-ascii.md` (SOLO re-sellar `tests_sha256`).
+  **Enmienda 1 (2026-07-07, detectada en la verificación del PM):**
+  `tests/test_validate_contracts.py` ÚNICAMENTE la aserción del mensaje "formato
+  invalido" — el fix autorizado del punto 2 (quitar el acento del mensaje) rompía el
+  test de C12 que asertaba el texto CON acento; el test sigue al mensaje. Consecuencia
+  forzada de un cambio autorizado, cero lógica nueva.
 - Los specs `CONTRACT-01..12` y sus reportes son históricos: read-only.
 - Python stdlib puro en el target; sin red; sin subprocess en el script (los tests sí
   pueden usar subprocess para el CLI).
