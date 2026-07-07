@@ -1,6 +1,6 @@
 ---
 name: kdd-okf-ccdd-hybrid
-description: Define el estándar Knowledge-Driven Development (KDD) que unifica el modelado de contexto de Open Knowledge Format (OKF) con el rigor de Contract-Driven Development (CCDD).
+description: Define el estándar Knowledge-Driven Development (KDD) que unifica el modelado de contexto de Open Knowledge Format (OKF) con el rigor de Contract-Driven Development (CCDD). Úsala al redactar o validar un task contract híbrido OKF+CCDD, al crear nodos en knowledge/, al instanciar la plantilla KDD en un proyecto, o cuando se mencione "contrato híbrido", "task contract", "nodo OKF", "KDD" o el ciclo draft→validated→implemented→verified.
 ---
 
 # Knowledge-Driven Development (KDD): OKF + CCDD
@@ -42,22 +42,13 @@ En lugar de eso, en secciones como `## Intent`, `## Interface`, o `## Constraint
 - **DON'T:** "La tabla de usuarios tiene un uuid, un email, un password, y una fecha de creación, y su ID es un string de 36 caracteres..."
 
 ## 4. Validación Continua Obligatoria (dos niveles)
-Antes de dar un contrato por terminado o pasárselo a un agente efímero, debes validarlo. Hay dos niveles:
-
-- **Nivel 1 (incluido en la plantilla, obligatorio):** `python scripts/validate_contracts.py knowledge/contracts` valida frontmatter, secciones obligatorias y examples; y el `test_command` del contrato debe terminar en verde. Ambos corren local y en CI (`.github/workflows/validate.yml`).
-- **Nivel 2 (opcional, si el entorno lo tiene):** el gate CCDD real vía servidor MCP `ccdd-complexity`, con las tools `lint_task_contract` (lint del contrato) y `run_integration_gate` (gate de complejidad/integración).
-
-Si no hay gate disponible, el nivel 1 es suficiente para considerar el contrato válido.
+Antes de dar un contrato por terminado o pasárselo a un agente efímero, debes validarlo. La referencia canónica completa (niveles 1 y 2, gate multi-lenguaje, export para el gate) está en [knowledge/validacion.md](../../../knowledge/validacion.md) — esta skill no la duplica. Resumen: nivel 1 (obligatorio) = `python scripts/validate_contracts.py knowledge/contracts` + `test_command` en verde, local y en CI; nivel 2 (opcional) = gate CCDD vía MCP `ccdd-complexity` (`lint_task_contract`, `run_integration_gate`). Sin gate disponible, el nivel 1 basta para considerar el contrato válido.
 
 ## 5. Precedencia del Budget
-- **Con gate CCDD disponible (nivel 2):** la config firmada por el gate manda. El `budget` del frontmatter solo puede ser **<=** los topes firmados; ante cualquier conflicto gana la config firmada del gate.
-- **Sin gate (solo nivel 1):** el `budget` del contrato es declarativo/informativo. El validador incluido solo verifica su **presencia** en el frontmatter; no enforced los topes.
+Ver [knowledge/validacion.md](../../../knowledge/validacion.md): con gate manda su config firmada (el `budget` del frontmatter solo puede ser <=); sin gate, el `budget` es declarativo y el validador solo verifica su presencia.
 
 ## 6. Ciclo de Vida del Contrato
-1. **draft** — contrato redactado en `knowledge/contracts/<task>.md`.
-2. **validated** — `python scripts/validate_contracts.py knowledge/contracts` (y `lint_task_contract` si hay gate) en verde.
-3. **implemented** — `test_command` del contrato en verde.
-4. **verified** — la salida **REAL** de los comandos se pega en `.agents/logs/<task>-REPORT.md`. Ese directorio está gitignorado a propósito: es evidencia local, no parte del repo.
+`draft` → `validated` → `implemented` → `verified`; el detalle de cada estado y la evidencia requerida están en [knowledge/validacion.md](../../../knowledge/validacion.md). La evidencia va en `.agents/logs/<task>-REPORT.md` (gitignorado a propósito: local, no parte del repo).
 
 ## 7. Contexto presupuestado (CCDD Nivel 2)
 Antes de delegar la implementación a un agente efímero, ensambla el contexto de la tarea con

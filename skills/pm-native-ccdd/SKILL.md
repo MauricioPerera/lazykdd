@@ -1,6 +1,6 @@
 ---
 name: pm-native-ccdd
-description: Variante NATIVA del PM/orquestador CCDD que usa sub-agentes de la app de Claude (tool Agent con model override) en vez de GLM/Ollama externo. Claude autora contrato + tests congelados (oráculo), delega la IMPLEMENTACIÓN a un sub-agente barato (Haiku 4.5), y verifica por el gate CCDD determinista. Úsala cuando quieras el flujo PM+CCDD sin la fragilidad de ollama, con aislamiento por worktree para paralelismo y reintentos con contexto vía SendMessage. Hermana de pm-glm-ccdd (misma metodología; cambia SOLO el mecanismo de delegación).
+description: Variante NATIVA del PM/orquestador CCDD que usa sub-agentes de la app de Claude (tool Agent con model override) en vez de GLM/Ollama externo. Claude autora contrato + tests congelados (oráculo), delega la IMPLEMENTACIÓN a un sub-agente barato (Haiku 4.5), y verifica por el gate CCDD determinista. Úsala cuando quieras el flujo PM+CCDD sin la fragilidad de ollama, con aislamiento por worktree para paralelismo y reintentos con contexto vía SendMessage. Hermana de pm-glm-ccdd (misma metodología; cambia SOLO el mecanismo de delegación). Deslinde con pm-sonnet-opus-haiku — si el repo usa CCDD/KDD y el veredicto lo da el gate determinista, usá ESTA; si no hay gate y el QA es revisión por modelo (subagente revisor), usá pm-sonnet-opus-haiku.
 ---
 
 # PM nativo · Devs = sub-agentes de la app (Agent + model override) · QA = CCDD gate

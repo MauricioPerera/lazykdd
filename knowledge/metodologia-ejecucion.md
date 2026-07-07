@@ -31,19 +31,16 @@ Plantillas: `specs/TEMPLATE-CONTRACT.md` y `docs/reports/TEMPLATE-REPORT.md`.
    el check exacto que la resuelve, y esos checks se corren ANTES de redactar specs.
    Una suposición sin check es una re-delegación futura.
    **Las afirmaciones de estado del entorno DENTRO de la spec son suposiciones del plan**
-   y siguen la misma regla: afirmar «node_modules ya está instalado» sin haberlo
-   verificado contamina el diagnóstico del agente — un fallo ambiental se parece a una
-   «causa preexistente» y dispara un ABORTAR SI legítimo, quemando la delegación. Si el
-   check no se corrió, la spec no afirma: condiciona («si falta X, instalarlo con Y»).
-   Caso real: un agente arrancó con `ERR_MODULE_NOT_FOUND` porque la spec afirmaba un
-   entorno que no existía; se salvó por iniciativa del agente, no por diseño.
+   y siguen la misma regla: si el check no se corrió, la spec no afirma — condiciona
+   («si falta X, instalarlo con Y»). Un fallo ambiental se parece a una «causa
+   preexistente» y dispara un ABORTAR SI legítimo, quemando la delegación
+   ([caso real](./casos-reales.md#entorno-afirmado)).
    La misma regla aplica a la EXISTENCIA de recursos nombrados: un pedido de «crear X»
    (repo, worker, base de datos) es en realidad «asegurar que X exista con este
    contenido». Verificar primero con un check barato (`gh repo view`, listado del
    proveedor, `ls`); si X ya existe, inspeccionar su contenido y reconciliar con lo
-   pedido — nunca crear ni forzar por encima. Caso real: un «crea el repo» sobre un
-   repo que ya existía con más contenido del que se iba a migrar; lo salvó el fallo
-   del proveedor («name already exists»), no el proceso.
+   pedido — nunca crear ni forzar por encima
+   ([caso real](./casos-reales.md#crear-sobre-existente)).
 2. **SPEC por tarea** — autocontenida y por OBJETIVO (estado final + definición de hecho
    con comando y resultado esperado), no por pasos. El agente efímero no tiene memoria:
    todo el contexto va en la spec (o se ensambla con el ensamblador de contexto).
@@ -59,14 +56,11 @@ Plantillas: `specs/TEMPLATE-CONTRACT.md` y `docs/reports/TEMPLATE-REPORT.md`.
    (contrato cumplido, tests verdes, valor cero) — y «¿cuál es el tipo/contenedor EXACTO
    de retorno en CADA modo?» — fijarlo en la definición de hecho (p. ej.
    `Array.isArray(...) === true` en todos los modos), no solo la shape del elemento.
-   Casos reales que este paso previene: búsqueda degradada a
-   escaneo completo con tests verdes; conteo de parámetros que evade el budget del gate;
-   un grep de verificación que matcheaba el valor exigido por otra orden del mismo plan;
-   un índice expuesto que ningún camino público usaba (`count` seguía escaneando); un
-   `find` delegado literal que devolvía un cursor lazy en un modo y un array en otro.
-   Complemento verificado: exigir sección de trade-offs en el reporte del agente es el
-   detector más barato de estas clases — ambos casos nuevos se declararon ahí y se
-   cazaron leyendo esa sección + el diff puntual de la zona, nunca el diff entero.
+   Las cinco clases verificadas de «comando cumplido sin cumplir la intención» que este
+   paso previene están en [casos reales](./casos-reales.md#hecho-sin-intencion).
+   Complemento verificado: exigir sección de **trade-offs** en el reporte del agente es
+   el detector más barato de estas clases — se cazan leyendo esa sección + el diff
+   puntual de la zona, nunca el diff entero.
 3. **DELEGAR** — un agente efímero por tarea. Tareas que compartan archivos → secuenciales.
    Las tareas en **paralelo** deben declarar en su spec el conjunto de archivos que tocan,
    y ese conjunto debe ser **disjunto** respecto a otras tareas corriendo al mismo tiempo.
@@ -82,11 +76,8 @@ Plantillas: `specs/TEMPLATE-CONTRACT.md` y `docs/reports/TEMPLATE-REPORT.md`.
    (credencial canario, fixture, archivo temporal) se conserva hasta CONFIRMAR el estado
    final esperado; borrarlo antes destruye la única evidencia re-testeable. Y en sistemas
    de propagación eventual (secrets, DNS, caches), un resultado inmediato contrario al
-   esperado no es fallo: se re-verifica con reintentos espaciados antes de concluir.
-   Caso real: un token de prueba borrado ANTES de observar el 401 de su revocación — el
-   200 inmediato era solo propagación del secret y ya no quedaba con qué re-testear; se
-   resolvió con un canario nuevo (alta → verificar → revocar → verificar 401 → recién
-   entonces borrar).
+   esperado no es fallo: se re-verifica con reintentos espaciados antes de concluir
+   ([caso real](./casos-reales.md#verificar-antes-de-limpiar)).
 5. **COMMIT por tarea verificada** — baseline limpio para la siguiente tarea.
 6. **CIERRE** — suite completa 2× (dos corridas idénticas ≈ sin flaky; un flaky detectado
    es una tarea futura, no se ignora), reporte del contrato en `docs/reports/`, estado en

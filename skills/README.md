@@ -2,8 +2,9 @@
 
 Copias versionadas de las skills operativas que implementan la metodología KDD.
 
-- `pm-glm-ccdd/SKILL.md` — Claude como PM/orquestador con devs GLM efímeros y gate CCDD (capa de PROYECTO: varias tareas, varios devs, integración).
-- `delegar-glm-ccdd/SKILL.md` — delegación de UNA función/tarea a GLM con gate CCDD (la capa de detalle debajo de pm-glm-ccdd).
+- `delegar-ollama/SKILL.md` — capa BASE: mecánica de lanzamiento headless vía `ollama launch claude`, agnóstica al modelo (probe de vida, `< /dev/null`, MCP mínimo, anti-cuelgue, sondas, cuota, recuperación). No sabe de CCDD ni decide tareas.
+- `delegar-glm-ccdd/SKILL.md` — delegación de UNA función/tarea a GLM con gate CCDD; usa `delegar-ollama` para la mecánica y `kdd-okf-ccdd-hybrid` para el contrato (la capa de detalle debajo de pm-glm-ccdd).
+- `pm-glm-ccdd/SKILL.md` — Claude como PM/orquestador con devs GLM efímeros y gate CCDD (capa de PROYECTO: varias tareas, varios devs, integración; por encima de las dos anteriores).
 - `pm-native-ccdd/SKILL.md` — variante NATIVA del PM: sub-agentes de la app de Claude (tool Agent, Haiku) en vez de GLM/Ollama; misma metodología, cambia solo el mecanismo de delegación.
 - `pkb-agent-first/SKILL.md` — sistema PocketBase Agent-First (repo D:\Repo\pkb): dev-tasks delegadas a sub-agentes GLM disparadas por webhook y verificadas contra tests definidos de antemano; planes encadenados (depends_on), deploy y notificación.
 

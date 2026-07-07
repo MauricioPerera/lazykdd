@@ -100,58 +100,10 @@ que la spec por pasos en tareas acotadas, y es más barata de redactar. Para tar
 en chunks: objetivo POR TAREA, nunca "objetivo del proyecto entero" en un prompt (devuelve vacío).
 
 ## Comando para lanzar un dev GLM (headless, background)
-Escribí el prompt de la tarea en un ARCHIVO (evita problemas de comillas) y lanzá con run_in_background:
-```
-ollama launch claude --model glm-5.2:cloud -y -- --permission-mode acceptEdits --allowedTools "Bash,mcp__ccdd-complexity__*" --strict-mcp-config --mcp-config <mcp.json-o-'{"mcpServers":{}}'> -p "$(cat <prompt.txt>)" < /dev/null > <log.txt> 2>&1
-```
-- **`< /dev/null` OBLIGATORIO** (lección de `delegar-glm-ccdd`): sin él claude puede quedar esperando
-  stdin y la tarea sale vacía (exit 0, sin trabajo).
-- **MCP MÍNIMO OBLIGATORIO (verificado 2026-07-03):** sin `--strict-mcp-config --mcp-config ...`, cada
-  dev hereda y levanta TODA la flota MCP global del usuario (n8n, github, chrome, computer-use...):
-  decenas de procesos por dev que colgaron la app de escritorio de Claude (evento Windows 1002
-  "dejó de interactuar") y mataron sesión + devs en background dos veces seguidas. Regla: si la tarea
-  NO usa el gate → `--mcp-config '{"mcpServers":{}}'`; si lo usa → un JSON con SOLO la entrada
-  `ccdd-complexity` copiada de `~/.claude.json`. Verificado que con MCP vacío el dev corre estable.
-
-### Variante /goal (verificado 2026-07-02, claude ≥ 2.1.139)
-Para que el dev siga trabajando SOLO hasta cumplir una condición (un evaluador independiente — modelo
-pequeño — juzga tras cada turno y lo devuelve a trabajar con feedback si no cumplió):
-```
-ollama launch claude --model glm-5.2:cloud -y -- -p "/goal <condición>" --dangerously-skip-permissions < /dev/null > <log.txt> 2>&1
-```
-- La condición: estado final + chequeo demostrable en la conversación ("`node --test` verde", "gate PASS
-  con salida pegada en REPORT.md") + restricciones + **tope OBLIGATORIO** ("o parar tras N turnos") — sin
-  tope no hay límite de gasto. Máx 4.000 chars.
-- **OJO (verificado): el tope de turnos NO protege contra bucles DENTRO de un turno.** El evaluador corre
-  al terminar cada turno; un dev que loopea llamando tools nunca termina el turno y el evaluador jamás se
-  ejecuta (caso real: 992 reintentos de una misma tool, 67 min, transcript de 3,5 MB). El timeout del task
-  en background TAMPOCO lo mató. Único guardián real: el PM monitoreando el transcript en disco (¿crece
-  sin avanzar? → TaskStop) según la política de timeouts.
-- El evaluador NO ejecuta comandos: solo juzga lo que el dev mostró. Por eso la condición debe exigir
-  salida REAL pegada. Su veredicto queda como artefacto `goal_status` en el transcript (ver Verificación).
-- Reemplaza la re-delegación manual por FAIL dentro de una misma invocación (reintentos automáticos con
-  la razón del evaluador como feedback). Costo del evaluador: despreciable (~1,5k tokens/veredicto).
-- **CRÍTICO — permisos (causa de fallo histórico):** `--permission-mode acceptEdits` SOLO auto-aprueba
-  Edit/Write. En headless (`-p`) NO hay quién apruebe, así que **Bash (node/npm/python) y las tools MCP
-  del gate quedan DENEGADAS** → el dev reescribe archivos pero NO puede correr el gate ni los tests, y
-  cae a "autoevaluación estática" (PASS falso). Por eso va el `--allowedTools "Bash,mcp__ccdd-complexity__*"`:
-  habilita exactamente lo que el dev necesita (correr gate + tests) sin bypass total. Alternativa más
-  laxa (repo desechable): `--dangerously-skip-permissions` en vez de `acceptEdits`+allowedTools.
-- **El veredicto vale por ARTEFACTO, no por palabra del dev:** exigí el JSON/veredicto real del gate y
-  corré los tests vos mismo antes de integrar. Si solo hay texto narrado "PASS", NO cuenta.
-- `run_in_background: true`. NO bloquees; te llega notificación al terminar.
-- Al finalizar, leé `<log.txt>` (o el `.output` del task) y reportá solo la síntesis.
-- **CRÍTICO (verificado):** el único CLI que funciona headless desde acá es **`claude`+GLM**. `agy`
-  (Antigravity) y `codex` se **CUELGAN** en modo no-interactivo (esperan TTY) — NO los uses para delegar.
-- **Error transitorio conocido (verificado 5 veces):** `Error: Could not verify your plan. Try again in
-  a moment.` — el lanzamiento muere en el acto (exit 1, log de 1 línea). Aparece casi siempre en el
-  PRIMER lanzamiento de un batch concurrente. Mitigación que funciona: **escaloná los arranques 25-35 s
-  entre devs** (`sleep N &&` antes del comando, dentro del mismo background task) y **relanzá el fallido
-  con `sleep 100 &&`**. No es un error tuyo ni del prompt; no lo depurés, relanzá.
-  Si falla 2+ veces seguidas incluso con delay: sondeá el verificador con un lanzamiento mínimo en
-  foreground (`ollama launch claude --model glm-5.2:cloud -y -- -p "responde solo: ok"`, timeout 3 min).
-  Si la sonda responde "ok", relanzá el dev real INMEDIATAMENTE (ventana buena, verificado que funciona);
-  si la sonda también falla, es cuota/estado de la cuenta → reportalo al usuario en vez de reintentar.
+Mecánica de lanzamiento (comando, `< /dev/null`, MCP mínimo, variante `/goal`, permisos, log vacío≠colgado,
+error transitorio, arranques escalonados, CLIs que funcionan headless, cuota de cuenta): ver
+[`delegar-ollama`](../delegar-ollama/SKILL.md) con `<MODEL>=glm-5.2:cloud`. Esta skill no repite esa
+mecánica — solo agrega lo específico de GLM y de la orquestación de proyecto (abajo).
 
 ## Cómo el dev GLM usa el CCDD gate
 - La instancia GLM **hereda el MCP del gate** (servidor `ccdd-complexity`) si está configurado en la
@@ -172,11 +124,11 @@ ollama launch claude --model glm-5.2:cloud -y -- -p "/goal <condición>" --dange
   **OJO: usá el comando de suite REAL del CI** (leé el workflow), no asumas `pytest`: en ccdd-gate
   `pytest` a secas rompe la colección (examples/ con basenames duplicados); el comando correcto era
   `python -m unittest discover -s tests -p "test_*.py"`. Poné el comando exacto en cada spec.
-- En la spec, instruí al dev a: autorar contrato (7 secciones + cláusula 'PARAR y reportar si...' en
-  Constraints) + property-tests congelados, validar con `lint_task_contract` y correr
-  `run_integration_gate` hasta PASS **sobre los archivos REALES del repo**. Medición puntual:
-  `measure_complexity`. **NUNCA `run_ephemeral_agent` apuntando al repo real:** corre en un sandbox
-  tempdir que VACÍA el directorio y puede destruir archivos (lección de `delegar-glm-ccdd`).
+- En la spec, instruí al dev a autorar el contrato + property-tests congelados según
+  [`kdd-okf-ccdd-hybrid`](../kdd-okf-ccdd-hybrid/SKILL.md) (7 secciones + frontmatter), validar con
+  `lint_task_contract` y correr `run_integration_gate` hasta PASS **sobre los archivos REALES del repo**.
+  Medición puntual: `measure_complexity`. **NUNCA `run_ephemeral_agent` apuntando al repo real:** corre
+  en un sandbox tempdir que VACÍA el directorio y puede destruir archivos.
 - El budget lo fija la **config firmada del gate** (no lo inventes); leelo del propio gate. Como
   referencia habitual suele ser cyclomatic≤20, nesting≤4, params≤5, lines≤80, pero el valor real manda.
 
@@ -252,173 +204,111 @@ ollama launch claude --model glm-5.2:cloud -y -- -p "/goal <condición>" --dange
   bloqueado y por qué.
 - Si el flujo es issue-primero, creá/actualizá issues por hallazgo.
 
-## Lecciones (no repetir errores de la jornada en que se creó esta skill)
-- NO hagas el trabajo vos "porque es rápido": el costo de tu contexto es el cuello de botella; **delegá**.
-- Prompt con comillas/multilínea → archivo + `$(cat ...)`, nunca inline frágil.
-- Dev vacío o colgado → confirmá que sea `claude`+GLM (no agy/codex), prompt correcto, y revisá el timeout.
-- No te pongas a vos de portón con "¿conviene delegar?": en esta skill, **siempre se delega**; vos dirigís.
-- Relación: la skill `delegar-glm-ccdd` cubre el detalle de delegar UNA función; **esta es la capa de
-  PROYECTO** (varias tareas, varios devs, integración) por encima.
+## Lecciones (por tema; la fecha entre paréntesis es la jornada en que se verificó)
 
-## Lecciones 2026-07-04 (jornada KDD template: 5/5 tareas a la primera, 0 re-delegaciones)
-- **El gate lo puede correr el PM, no el dev.** Si el PM tiene el MCP `ccdd-complexity` en SU sesión,
-  es más barato y estable dar a los devs MCP vacío + hecho verificable por suite/greps, y que el PM
-  corra `lint_task_contract` sobre el entregable al verificar. Mismo veredicto determinista, cero
-  riesgo de flota MCP en los devs, specs más simples. Reservá el gate-en-el-dev para cuando el dev
-  deba ITERAR contra el gate (funciones nuevas complejas), no para validar un artefacto final.
-- **Tareas de DOCS también tienen hecho determinista: greps de presencia Y ausencia.** Patrón verificado:
-  `grep -n "<string-clave>" <files>` (hit obligatorio en cada archivo) + `grep -rn "<lo-prohibido>" <files>
-  || echo SIN_MENCIONES` (debe imprimir SIN_MENCIONES) + suite verde. El dev pega la salida real y el PM
-  re-corre los mismos greps. Sin esto, una tarea de docs no tiene veredicto y cae a "confiar en la lectura".
-- **Retoques triviales de integración los hace el PM, no un dev nuevo**: typo de 2 palabras, alinear
-  registro (voseo→tuteo). Re-delegar eso cuesta más que hacerlo; no viola "no escribís código de
+### Doctrina del PM
+- NO hagas el trabajo vos "porque es rápido": el costo de tu contexto es el cuello de botella; **delegá**.
+- No te pongas a vos de portón con "¿conviene delegar?": en esta skill, **siempre se delega**; vos dirigís.
+- **Retoques triviales de integración los hace el PM, no un dev nuevo** (2026-07-04): typo de 2 palabras,
+  alinear registro (voseo→tuteo). Re-delegar eso cuesta más que hacerlo; no viola "no escribís código de
   producción" (es pulido de integración, no implementación). El umbral: si necesita tests, se delega.
-- **El dev copia el REGISTRO de la spec, no el del repo.** Specs redactadas en voseo produjeron docs en
+- **KDD es la metodología canónica; esta skill es la capa operativa** (2026-07-05). Ante cualquier mejora
+  de proceso: actualizar PRIMERO el repo KDD (MauricioPerera/KDD) y reflejar después acá.
+- Relación: [`delegar-ollama`](../delegar-ollama/SKILL.md) cubre la mecánica de lanzamiento agnóstica al
+  modelo — comando, `/goal`, permisos, sondas, anti-cuelgue, monitoreo por mtimes, arranques escalonados,
+  error transitorio, cuota de cuenta y recuperación tras muerte del host; NADA de eso se repite acá.
+  [`delegar-glm-ccdd`](../delegar-glm-ccdd/SKILL.md) cubre delegar UNA función con GLM. **Esta es la capa
+  de PROYECTO** (varias tareas, varios devs, integración) por encima de ambas.
+
+### Specs
+- **El dev copia el REGISTRO de la spec, no el del repo** (2026-07-04). Specs en voseo produjeron docs en
   voseo dentro de un repo en tuteo, aunque la spec pedía "tono consistente con el README". Si el registro
   importa, decilo EXPLÍCITO con ejemplo ("tuteo: 'explora', no 'explorá'") o asumí el retoque al integrar.
-- **Monitoreo sin log: mtimes en disco.** En headless `-p` el log se escribe AL FINAL (log vacío ≠ dev
-  colgado). Para saber si avanza: `ls -la` de los entregables esperados y de `__pycache__/` (mtime
-  reciente = está ejecutando tests ahora). Verificado como criterio para NO matar un dev sano.
-- **Arranques escalonados re-verificados**: 3 devs con offsets 0/30/60 s → cero errores "Could not
-  verify your plan" en toda la jornada (5 lanzamientos).
-- **Verificación en dos momentos**: los entregables de un dev que ya terminó se pueden verificar (lint,
-  lectura puntual) MIENTRAS los otros devs del batch siguen corriendo — sus archivos son disjuntos, no
-  hay carrera. La suite completa 2× sí espera al batch entero.
+- **Cláusulas de honestidad cuando el hecho pueda ser inalcanzable por razones legítimas** (2026-07-05):
+  "si <condición legítima>, documentalo con el análisis y PARÁ, no lo fuerces" + prohibir inventar tests.
+  Caso que habilitaron: un dev demostró con fuzz (69k inputs) que un mutante de una auditoría de mutación
+  era EQUIVALENTE y que los otros ya morían — el tool los reportaba vivos por un bug real de `__pycache__`
+  stale. Un aparente FAIL se convirtió en dos fixes de producción.
+- **Features de infraestructura sobre un núcleo vivo: siempre opt-in** (2026-07-05): wal/lock/autoflush
+  como opciones nuevas con default = comportamiento previo intacto. Permitió aterrizar WAL + transacciones
+  + lock + CRC en 6 tareas seguidas sin romper jamás los tests preexistentes.
+- **Núcleo con copias vendored congeladas por test de sincronía** (2026-07-05): toda spec que toque el
+  núcleo incluye como paso final "copiar el raíz byte-idéntico sobre <copias>" — si no, la suite rompe
+  por diseño y el dev reporta un FAIL que no es suyo.
+- **Baseline rota = tarea T0 antes de cualquier feature** (2026-07-05), con los tests rojos existentes
+  como oráculo congelado si los hay (17 tests describían funciones jamás implementadas: spec gratis).
+  Los devs de features en paralelo reciben el aviso "la suite completa puede estar roja por X ajeno;
+  tu veredicto son TUS suites + no aportar errores nuevos a tsc".
+- **Fallos de spec al "exponer/subir" a una fachada** (2026-07-06; ya integrados al red-team del HECHO,
+  arriba): (1) **feature decorativa** — se expuso `ensureIndex` pero ningún camino público usaba el índice;
+  contrato cumplido, tests verdes, valor cero; (2) **contenedor divergente** — `find` delegado literal
+  devolvía Cursor lazy en un modo y array en otro; la spec fijaba la shape pero no el contenedor. Ambos
+  fueron fallos del PM, no del dev: el dev entregó lo pedido y DECLARÓ el trade-off.
+- **Pendiente colateral viaja gratis en la spec siguiente que ya toca ese archivo** (2026-07-06): recrear
+  una sección del CHANGELOG se encargó en una línea al dev de la tarea siguiente, sin tarea propia.
 
-## Lecciones 2026-07-04 (jornada multi-lenguaje ccdd-gate: 9 backends, 1 re-delegación por diseño)
-- **La verificación local del PM = EXACTAMENTE los checks que el PR va a correr.** La suite sola no
-  basta si el repo tiene auto-gates en CI. Caso real: un dev entregó suite verde y el check `gate` de
-  dogfooding del repo (complejidad sobre el propio código) falló en el PR por una función con nesting 5.
-  Antes del primer batch, leé el workflow del CI y replicá TODOS sus pasos como verificación de batch.
-- **Trade-off declarado ≠ trade-off aceptable: juzgalo contra el PROPÓSITO de la pieza.** Un dev declaró
-  honesto que en Go `func f(a, b int)` contaba 1 parámetro "para no desviar el patrón". Contra el budget
-  params≤5 eso es evasión del gate (`f(a,b,c,d,e,f int)` → 1). Se re-delegó un fix puntual. Complemento
-  barato que lo cazó ANTES de leer el report: demo en vivo del PM con inputs PROPIOS (no los del dev).
-- **Oráculos congelados (fixtures/manifest de conformancia): exigí "cambio ADITIVO" en la spec y
-  verificalo SEMÁNTICAMENTE** (cargar el JSON de HEAD y el nuevo, comparar por entrada los valores de
-  lenguajes preexistentes), no por diff de líneas: un diff con 9 líneas borradas resultó ser reformateo
-  inocuo — y un diff "limpio" podría esconder un cambio de valor.
-- **NO lances un dev con `&` dentro de un Bash task en background** (p.ej. encadenado tras un commit):
-  el task "completa" en el acto, el dev queda huérfano y NO llega notificación al terminar. Un
-  lanzamiento de dev = su propio task con run_in_background, sin `&`; los pasos previos van aparte.
-  Si ya pasó: watcher (loop que espera el log no-vacío; el timeout de Bash lo corta a los 10 min → re-armar).
-- **El PM prepara el entorno ANTES de redactar specs**: instalar deps que los devs van a necesitar
-  (p.ej. `pip install` de gramáticas tree-sitter) + smoke de carga. Verifica viabilidad de una vez y
-  evita que N devs redescubran la dependencia faltante por separado.
+### Delegación y batches
+- **El gate lo puede correr el PM, no el dev** (2026-07-04). Con el MCP `ccdd-complexity` en TU sesión,
+  es más barato dar a los devs MCP vacío + hecho verificable por suite/greps, y correr vos
+  `lint_task_contract` sobre el entregable. Mismo veredicto determinista, cero riesgo de flota MCP en los
+  devs. Gate-en-el-dev solo cuando deba ITERAR contra el gate (funciones nuevas complejas).
+- **Verificación en dos momentos** (2026-07-04): los entregables de un dev que ya terminó se verifican
+  (lint, lectura puntual) MIENTRAS los otros devs del batch siguen corriendo — archivos disjuntos, no hay
+  carrera. La suite completa 2× sí espera al batch entero.
+- **El fix de un batch sin commitear puede re-delegarse sobre el árbol sucio** (2026-07-06) indicándole
+  al dev que los archivos del batch anterior "SON TUYOS para corregir". El commit llega cuando el batch
+  completo pasa el veredicto del PM.
+- **El shell del PM puede reiniciarse entre llamadas** (2026-07-05; cwd vuelve al default sin aviso):
+  el comando que lanza un dev SIEMPRE lleva su `cd` explícito delante.
+- **Matices GLM sobre la cuota** (2026-07-05; la mecánica general está en `delegar-ollama`): vacío
+  repetido ≠ spec grande — antes de subdividir una spec que vuelve vacía, descartá ventana mala del
+  proveedor con la sonda de tools. Y una muerte por cuota al FINAL de la tarea puede dejar trabajo
+  COMPLETO y verde en disco (murieron escribiendo su REPORT): auditá disco y corré el gate ANTES de
+  darlo por FAIL — el gate decide, no el log; un batch entero se integró así sin re-delegar nada.
 
-## Lecciones 2026-07-05 (retrofit KDD en ccdd-gate: fallos en cascada del CI convertidos en fixes)
-- **Ante un "imposible" del dev: reproducción barata del PM ANTES de re-delegar o descartar.** Un dev
-  se negó honestamente a "matar" mutantes de una auditoría de mutación: demostró con fuzz (69k inputs)
-  que uno era EQUIVALENTE y que los otros dos ya morían — el tool los reportaba vivos por un bug real
-  de `__pycache__` stale. Una reproducción del PM de 1 comando confirmó el bug y convirtió un aparente
-  FAIL en dos fixes de producción. Las cláusulas de spec que habilitaron esa honestidad: "si un mutante
-  es EQUIVALENTE, documentalo con el análisis y PARA, no lo fuerces" + prohibir inventar tests. Ponelas
-  siempre que el hecho verificable pueda ser inalcanzable por razones legítimas.
-- **"Replicar los checks del PR" incluye los CONDICIONALES por diff.** Un gate de CI que solo corre si
-  el PR toca cierto tipo de archivo (ej: contratos) puede no haber corrido NUNCA hasta tu PR, y fallar
-  en cascada por capas (lint → gate completo → mutación). Antes del primer PR que toque un tipo de
-  archivo nuevo: leer TODOS los workflows buscando pasos que actúen sobre el diff y replicarlos local.
-- **Todo workflow de GitHub editado por un dev se parsea localmente antes de pushear**
-  (`python -c "import yaml; yaml.safe_load(open('.github/workflows/X.yml'))"`). Fallo real: un dev
-  escribió `- name: KDD: validar...` (dos puntos sin comillas) → YAML inválido → el workflow requerido
-  falla en 0s SIN check-runs y la protección de rama bloquea el merge aunque el resto pase. Diagnóstico:
-  `gh run list --branch <rama>` con failures de 0s. La suite no cubre workflows; solo el parseo lo caza.
-- **Los fallos en cascada de gates apilados son el sistema FUNCIONANDO**: cada re-corrida del PR destapó
-  la capa siguiente (cwd de tests → budget → mutación → YAML). No es churn: presupuestá 1 re-delegación
-  chica por capa y mantené el criterio "el gate es la ley, el artefacto se adapta al gate" (nunca
-  debilitar el gate para que pase — salvo bug demostrado DEL gate, que se arregla con su propio fix).
-
-## Lecciones 2026-07-05 (sesión wargame→KDD: CONTRACT-09, 1 dev, 0 re-delegaciones)
-- **KDD es la metodología canónica; esta skill es la capa operativa.** Ante cualquier mejora de proceso:
-  actualizar PRIMERO el repo KDD (MauricioPerera/KDD) y reflejar después acá. Los parches RECON NEEDED /
-  red-team del HECHO / ABORTAR SI ya están en ambos lados (sincronizados 2026-07-05).
-- **El checklist pre-delegación es EJECUTABLE en repos KDD:** `python scripts/validate_specs.py specs`
-  (CONTRACT-09) valida los contratos de ejecución — contratos abiertos exigen Tocar SOLO y ABORTAR SI
-  rellenado; cerrados (con reporte en docs/reports/) solo baseline. En repos KDD, corrélo como parte de
-  la verificación de batch; no confíes en la disciplina del redactor.
-
-## Recuperación tras muerte del host (verificado 2026-07-03)
-Los devs en background viven en el árbol de procesos de la app: si la app de Claude se cuelga/cierra,
-el task aparece como "stopped — no completion record". Eso NO significa que el dev falló ni que el
-trabajo se perdió. Protocolo antes de re-lanzar:
-1. **Auditá qué quedó en disco**: `git status`/`git log` (los launchers o el dev pueden haber commiteado),
-   archivos `<TAREA>-REPORT.md`, y el transcript del dev en `~\.claude\projects\<cwd-sanitizado>\*.jsonl`
-   (mtime = hasta cuándo trabajó; tools usadas = cuánto avanzó).
-2. Si el trabajo está completo → verificalo vos como siempre (el log del dev puede estar vacío por el
-   corte; el veredicto sale de comandos tuyos, no de su resumen).
-3. Si quedó a medias → re-lanzá la MISMA spec (los devs son efímeros e idempotentes sobre specs por
-   objetivo); si quedó basura parcial, limpiala o indicá en la spec qué existe ya.
-4. Si el host murió DOS veces con dev corriendo → buscá la causa ambiental antes del 3er intento
-   (event log de Windows: `Get-WinEvent` Id 1000/1002 para claude.exe; procesos huérfanos; RAM).
-   Causa raíz encontrada esa jornada: flota MCP heredada por cada dev (ver "MCP MÍNIMO" arriba).
-
-## Lecciones 2026-07-05 tarde (jornada durabilidad js-doc-store: 13 devs OK, ventana de fallos GLM)
-- **GLM cloud tuvo una ventana de ~30 min devolviendo respuestas VACÍAS** (exit 0, log en blanco,
-  cero trabajo en disco) para CUALQUIER spec de tarea, mientras prompts cortos ("responde ok")
-  funcionaban. Se descartó por diferencial: no era tamaño de spec (subdividirla NO lo arregló), ni
-  contenido (la MISMA spec funcionó minutos después), ni flags, ni cwd. Era flakiness del proveedor.
-  Matiz sobre la lección vieja "spec grande devuelve vacío": vacío repetido ≠ siempre spec grande —
-  antes de subdividir, descartá ventana mala del proveedor con la sonda-tool de abajo.
-  CAUSA RAÍZ confirmada al final de la jornada: la cuenta estaba llegando al LÍMITE SEMANAL de Ollama;
-  cerca del límite el proveedor degrada a respuestas vacías/`LISTO` falso ANTES de mostrar el error
-  explícito ("Server is temporarily limiting requests... weekly usage limit"). Si ves vacíos
-  intermitentes que la sonda-tool a veces pasa, revisá la cuota en ollama.com/settings ANTES de
-  quemar relanzamientos: cada reintento gasta lo poco que queda.
-  OJO: el límite es de la CUENTA de Ollama, no del modelo — aplica a TODOS sus modelos cloud
-  (verificado: kimi-k2.7-code:cloud falló con el mismo error). Cambiar de modelo NO es mitigación;
-  las únicas salidas son reponer cuota, esperar el reset, o un modelo local (si la tarea lo tolera).
-- **La sonda correcta es de TOOLS, no de texto.** En la misma ventana mala, GLM respondió "LISTO" a
-  una tarea mínima SIN haberla hecho (mentira, no solo vacío). Sonda válida: "crea el archivo X con
-  contenido Y y responde LISTO" DENTRO del cwd del lanzamiento (acceptEdits no auto-aprueba escrituras
-  fuera del proyecto — una sonda con path externo da falso negativo en cualquier modelo) y verificar
-  que el archivo EXISTE, no que dijo LISTO. Con sonda-tool verificada, lanzar el dev real INMEDIATAMENTE
-  en esa ventana buena (verificado: la spec que había fallado 4 veces pasó a la primera).
-- **Núcleo con copias vendored congeladas por test de sincronía**: toda spec que toque el núcleo debe
-  incluir como paso final "copiar el raíz byte-idéntico sobre <copias>" — si no, la suite rompe por
-  diseño y el dev reporta un FAIL que no es suyo. (Patrón: primero un dev desduplica y agrega el test
-  de sincronía; desde ahí, TODAS las specs sobre ese archivo llevan el paso de propagación.)
-- **El shell del PM puede reiniciarse entre llamadas** (cwd vuelve al default sin aviso; visto 2 veces
-  en la jornada): el comando que lanza un dev SIEMPRE lleva su `cd` explícito delante, nunca asumas
-  el cwd heredado de una llamada anterior.
-- **Features de infraestructura sobre un núcleo vivo: siempre opt-in** (wal/lock/autoflush como
-  opciones nuevas con default = comportamiento previo intacto). Permitió aterrizar WAL + transacciones
-  + lock + CRC en 6 tareas seguidas sin romper jamás los 15-21 tests preexistentes.
-- **Cierre de cadena de features: un harness adversarial de verdad** (crash-injection con SIGKILL real
-  a procesos hijos y chequeo de invariantes tras recuperación) como ÚLTIMA tarea, con cláusula "si un
+### Verificación
+- **Tareas de DOCS: hecho determinista por greps de presencia Y ausencia** (2026-07-04):
+  `grep -n "<clave>" <files>` (hit obligatorio en cada archivo) + `grep -rn "<prohibido>" <files>
+  || echo SIN_MENCIONES` + suite verde. El dev pega la salida real y el PM re-corre los mismos greps.
+  Sin esto, una tarea de docs no tiene veredicto y cae a "confiar en la lectura".
+- **La verificación local del PM = EXACTAMENTE los checks que el PR va a correr, incluidos los
+  CONDICIONALES por diff** (2026-07-04/05). Caso 1: suite verde pero el check `gate` de dogfooding del
+  repo falló en el PR por una función con nesting 5. Caso 2: un gate de CI que solo corre si el PR toca
+  cierto tipo de archivo puede no haber corrido NUNCA hasta tu PR y fallar en cascada por capas. Antes
+  del primer batch: leer TODOS los workflows (también los pasos condicionales) y replicarlos local.
+- **Trade-off declarado ≠ trade-off aceptable: juzgalo contra el PROPÓSITO de la pieza** (2026-07-04).
+  Un dev declaró honesto que en Go `func f(a, b int)` contaba 1 parámetro; contra el budget params≤5 eso
+  es evasión del gate (`f(a,b,c,d,e,f int)` → 1). Complementos baratos: demo en vivo del PM con inputs
+  PROPIOS (no los del dev), y **leer SIEMPRE la sección de trade-offs del REPORT** — re-confirmada
+  (2026-07-06) como el detector más barato: los fallos de fachada se cazaron leyéndola + diff puntual.
+- **Oráculos congelados (fixtures/manifest): exigí "cambio ADITIVO" y verificalo SEMÁNTICAMENTE**
+  (2026-07-04) — cargar el JSON de HEAD y el nuevo y comparar por entrada, no por diff de líneas: un diff
+  con 9 líneas borradas resultó reformateo inocuo, y un diff "limpio" podría esconder un cambio de valor.
+- **Todo workflow de GitHub editado por un dev se parsea localmente antes de pushear** (2026-07-05):
+  `python -c "import yaml; yaml.safe_load(open('.github/workflows/X.yml'))"`. Fallo real: `- name: KDD:
+  validar...` (dos puntos sin comillas) → YAML inválido → el workflow requerido falla en 0s SIN
+  check-runs y la protección de rama bloquea el merge. Diagnóstico: `gh run list` con failures de 0s.
+- **Ante un "imposible" del dev: reproducción barata del PM ANTES de re-delegar o descartar**
+  (2026-07-05): una reproducción de 1 comando confirmó el bug del tool y convirtió un FAIL aparente en
+  fixes de producción (ver el caso del mutante equivalente en Specs).
+- **Los fallos en cascada de gates apilados son el sistema FUNCIONANDO** (2026-07-05): cada re-corrida
+  destapa la capa siguiente (cwd → budget → mutación → YAML). Presupuestá 1 re-delegación chica por capa
+  y mantené "el gate es la ley" (nunca debilitarlo para que pase — salvo bug demostrado DEL gate).
+- **Ojo con el pipe al verificar la suite** (2026-07-06): `node --test | tail` enmascara el exit code.
+  O capturás el conteo con grep de `pass/fail`, o corrés sin pipe y validás exit 0.
+- **Cierre de cadena de features: un harness adversarial de verdad** (2026-07-05) — crash-injection con
+  SIGKILL real y chequeo de invariantes tras recuperación como ÚLTIMA tarea, con cláusula "si un
   invariante falla es hallazgo: documentá y dejá el FAIL, prohibido parchear el núcleo o debilitar el
   assert". Valida la cadena entera con evidencia de máquina, no con lecturas.
+- **En repos KDD, el checklist pre-delegación es EJECUTABLE** (2026-07-05): `python scripts/validate_specs.py
+  specs` valida los contratos de ejecución (abiertos exigen Tocar SOLO y ABORTAR SI; cerrados solo
+  baseline). Corrélo como parte de la verificación de batch; no confíes en la disciplina del redactor.
 
-## Lecciones 2026-07-05 tarde (jornada micro-expert: 6 devs, 2 muertos por cuota, 0 trabajo perdido)
-- **Complemento del caso cuota:** además de vacíos/LISTO falso (arriba), el límite semanal puede matar
-  devs AL FINAL de la tarea: log de 2 líneas (solo el error de API) pero trabajo COMPLETO y verde en
-  disco — murieron escribiendo su REPORT. Ante muerte por cuota: auditá disco y corré el gate ANTES de
-  darlo por FAIL; un batch entero se integró así sin re-delegar nada. El gate decide, no el log.
-- **Bug de versión fantasma (chequeo de RECON barato en proyectos npm):** código commiteado contra una
-  versión de dependencia NUNCA publicada (repomemory "2.19.0" con npm en 2.16.0) → baseline rota en
-  tests Y build. Check: `npm view <dep> versions` vs package.json vs los imports que el código usa.
-  Fix que preserva la intención: feature-detection en runtime, no borrar la lógica.
-- **Baseline rota = tarea T0 antes de cualquier feature**, con los tests rojos existentes como oráculo
-  congelado si los hay (17 tests describían funciones jamás implementadas: spec gratis). Los devs de
-  features en paralelo reciben en su spec el aviso "la suite completa puede estar roja por X ajeno;
-  tu veredicto son TUS suites + no aportar errores nuevos a tsc".
-
-## Lecciones 2026-07-06 (jornada js-store fachada: 6 lanzamientos, 2 re-delegaciones por fallo de SPEC)
-- **Dos clases nuevas de fallo de spec al "exponer/subir" a una fachada** (ya integradas al red-team
-  del HECHO, arriba, y al repo KDD `knowledge/metodologia-ejecucion.md`): (1) **feature decorativa** —
-  se expuso `ensureIndex` pero ningún camino público usaba el índice (`count` seguía escaneando);
-  contrato cumplido, tests verdes, valor cero; (2) **contenedor divergente** — `find` delegado literal
-  devolvía Cursor lazy en memoria y array en disco; la spec fijaba la shape del doc pero no el
-  contenedor. Ambos fueron fallos del PM, no del dev: el dev entregó lo pedido y DECLARÓ el trade-off.
-- **La sección de trade-offs del REPORT re-confirmada como el detector más barato**: ambos casos se
-  cazaron leyéndola + diff puntual de esa zona (nunca el diff entero). Mantener la exigencia de
-  trade-offs en TODA spec.
-- **El fix de un batch sin commitear puede re-delegarse sobre el árbol sucio** indicándole al dev que
-  los archivos del batch anterior "SON TUYOS para corregir" (caso find→array: el 2º dev corrigió
-  código, tests y contrato del 1º sin fricción). El commit llega cuando el batch completo pasa el
-  veredicto del PM.
-- **Ojo con el pipe al verificar la suite**: `node --test | tail` enmascara el exit code (el pipeline
-  devuelve el exit de tail). O capturás el conteo con grep de `pass/fail`, o corrés sin pipe y validás
-  exit 0; una corrida "verde" por pipe no es evidencia.
-- **Pendiente colateral como parte de la spec siguiente**: recrear la sección `[Unreleased]` del
-  CHANGELOG se le encargó al dev de la tarea siguiente en una línea (cerró el pendiente sin tarea
-  propia). Micro-encargos de integración viajan gratis en la spec que ya toca ese archivo.
+### Entorno y RECON
+- **El PM prepara el entorno ANTES de redactar specs** (2026-07-04): instalar deps que los devs van a
+  necesitar (p.ej. gramáticas tree-sitter) + smoke de carga. Verifica viabilidad de una vez y evita que
+  N devs redescubran la dependencia faltante por separado.
+- **Bug de versión fantasma (chequeo RECON barato en proyectos npm)** (2026-07-05): código commiteado
+  contra una versión de dependencia NUNCA publicada → baseline rota en tests Y build. Check: `npm view
+  <dep> versions` vs package.json vs los imports que el código usa. Fix que preserva la intención:
+  feature-detection en runtime, no borrar la lógica.
