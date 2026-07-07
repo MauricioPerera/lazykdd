@@ -18,8 +18,8 @@ Sin LLM, sin red, sin subprocess. Solo stdlib. Recibe el directorio de specs
   - `Tocar SOLO` presente (como texto) dentro de la seccion Restricciones.
   - Bullet `ABORTAR SI` presente: una linea que empieza con `- ABORTAR SI`.
     Su texto (incluidas sus lineas de continuation indentadas hasta el
-    siguiente bullet o seccion) NO debe contener los caracteres `<` ni `>`
-    (placeholders del template).
+    siguiente bullet o seccion) NO debe contener placeholders de angulo
+    (patron `<...>`); un `->` legitimo esta permitido.
 
   exit 0 si no hay errores, 1 si hay >=1 error.
 
@@ -177,11 +177,11 @@ def validate_file(file_rel, text, is_closed):
                     "contrato abierto sin bullet 'ABORTAR SI' en Restricciones"))
             else:
                 abortar_text = _abortar_text(restr_lines, abortar_idx)
-                if '<' in abortar_text or '>' in abortar_text:
+                if re.search(r'<[^<>\n]+>', abortar_text):
                     findings.append(_finding(
                         file_rel, 'ABORTAR',
-                        "el bullet 'ABORTAR SI' contiene placeholders con "
-                        "caracteres de angulo ('<' o '>')"))
+                        "el bullet 'ABORTAR SI' contiene un placeholder de angulo "
+                        "(patron <...>)"))
 
     return findings
 

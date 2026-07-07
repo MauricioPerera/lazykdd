@@ -46,7 +46,8 @@ de `scripts/validate_okf.py`; exit 0 sin ERRORs · 1 con ≥1 ERROR.
   sección `## Restricciones` presente.
 - Reglas SOLO para ABIERTOS: `Tocar SOLO` presente en Restricciones; bullet
   `- ABORTAR SI` presente y su texto (incluidas sus líneas de continuación
-  indentadas hasta el siguiente bullet o sección) no contiene `<` ni `>`.
+  indentadas hasta el siguiente bullet o sección) no contiene placeholders de
+  ángulo (patrón `<...>`).
 - Los contratos históricos 01-08 (cerrados) pasan sin editarse; el validador se
   adapta a ellos vía la regla cerrado/abierto, no al revés.
 - Determinista: findings ordenados (por archivo, luego regla); sin red, sin
@@ -57,8 +58,10 @@ de `scripts/validate_okf.py`; exit 0 sin ERRORs · 1 con ≥1 ERROR.
   abierto conforme) y CLI exit 0.
 - Fixture abierto sin bullet `ABORTAR SI` -> finding ERROR regla `ABORTAR`; CLI
   exit 1.
-- Fixture abierto con `- ABORTAR SI: <condición>` (placeholder de ángulo) ->
+- Fixture abierto con `- ABORTAR SI: <condición>` (placeholder `<...>`) ->
   finding ERROR regla `ABORTAR`; CLI exit 1.
+- Fixture abierto con `- ABORTAR SI: ... -> PARAR y reportar.` (flecha sin
+  placeholder) -> sin finding; CLI exit 0.
 - Fixture abierto sin comando entre backticks en criterios -> finding ERROR regla
   `SEC_CRITERIOS`; CLI exit 1.
 - Fixture cerrado sin `Tocar SOLO` ni `ABORTAR SI` -> sin finding (válido).

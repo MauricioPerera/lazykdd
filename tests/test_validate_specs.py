@@ -135,6 +135,21 @@ class TestOpenAbortarWithPlaceholder(unittest.TestCase):
             self.assertIn('ABORTAR', _rules(findings))
 
 
+class TestOpenAbortarWithArrow(unittest.TestCase):
+    def test_open_abortar_with_arrow_passes(self):
+        restr = (
+            "- Tocar SOLO: `scripts/x.py`.\n"
+            "- ABORTAR SI: si la regla falla -> PARAR y reportar.\n"
+        )
+        with tempfile.TemporaryDirectory() as d:
+            _make_repo(d, [(
+                'CONTRACT-15-abortar-arrow.md',
+                _open_body(GOOD_CRIT, restr),
+                False)])
+            findings = vs.validate_specs(os.path.join(d, 'specs'))
+            self.assertEqual(findings, [], msg=findings)
+
+
 class TestOpenNoBacktickCommand(unittest.TestCase):
     def test_open_without_backtick_command_is_error(self):
         crit = (
