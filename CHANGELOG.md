@@ -54,3 +54,9 @@ The Knowledge-Driven Development (KDD) template is now complete and operationall
 
 **Contract 13 — Lint ASCII de scripts** ([C13-REPORT](docs/reports/CONTRACT-13-REPORT.md))
 - Linter ASCII de literales en scripts; pragma de línea y skip-file; orden determinista por (archivo, línea).
+
+**Contract 14 — Versionado de la plantilla** ([C14-REPORT](docs/reports/CONTRACT-14-REPORT.md))
+- Este CHANGELOG, el nodo de upgrade (`knowledge/plantilla-upgrade.md`), la subsección de versionado del README y el test de coherencia que los fija; primer tag `v1.0.0`.
+
+**Contract 15 — Ensamblador a escala** ([C15-REPORT](docs/reports/CONTRACT-15-REPORT.md))
+- Retriever con ranking determinista (mención > tag); corte por nodo en vez de sobre la concatenación; reporte honesto (`selected`/`cut`/`omitted_nodes`); `budget.chars_per_token` configurable.
