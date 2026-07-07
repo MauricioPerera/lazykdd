@@ -139,13 +139,13 @@ class TestInitProject(unittest.TestCase):
         # Criterio estrella: post-init los 3 gates verdes en la copia.
         _copy_repo(self.repo)
         self.assertEqual(_run_cli(self.repo, "--apply").returncode, 0)
-        # Evitar recursion: este mismo test no debe correrse dentro del
-        # discover de la copia (no es "infra restante", es el test del tool).
-        os.unlink(os.path.join(self.repo, "tests", "test_init_project.py"))
         vc = _run(["scripts/validate_contracts.py", "knowledge/contracts"], self.repo)
         self.assertEqual(vc.returncode, 0, "validate_contracts:\n" + vc.stdout + vc.stderr)
         vo = _run(["scripts/validate_okf.py", "knowledge"], self.repo)
         self.assertEqual(vo.returncode, 0, "validate_okf:\n" + vo.stdout + vo.stderr)
+        # Evitar recursion: este mismo test no debe correrse dentro del
+        # discover de la copia (no es "infra restante", es el test del tool).
+        os.unlink(os.path.join(self.repo, "tests", "test_init_project.py"))
         disc = _run(["-m", "unittest", "discover", "-s", "tests",
                      "-p", "test_*.py"], self.repo)
         self.assertEqual(disc.returncode, 0,

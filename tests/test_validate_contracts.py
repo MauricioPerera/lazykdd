@@ -64,7 +64,11 @@ Los tests estan en tests/test_sample.py
 
 
 def _write(d, name, content):
+    """Escribe archivo creando directorios padre si es necesario."""
     p = os.path.join(d, name)
+    parent = os.path.dirname(p)
+    if parent and not os.path.exists(parent):
+        os.makedirs(parent, exist_ok=True)
     with open(p, 'w', encoding='utf-8') as fh:
         fh.write(content)
     return p
@@ -98,18 +102,46 @@ class TestFrontmatterParser(unittest.TestCase):
 
 class TestValidatorValid(unittest.TestCase):
     def test_valid_contract_no_errors(self):
-        with tempfile.TemporaryDirectory() as d:
-            _write(d, 'ok.md', VALID_CONTRACT)
-            findings = vc.validate_directory(d)
+        with tempfile.TemporaryDirectory() as repo_root:
+            # Crear estructura completa: contracts/, src/, tests/
+            contracts_dir = os.path.join(repo_root, 'knowledge', 'contracts')
+            os.makedirs(contracts_dir, exist_ok=True)
+            _write(repo_root, 'knowledge/contracts/ok.md', VALID_CONTRACT)
+            _write(repo_root, 'src/hello.py', 'def hello(name: str) -> str:\n    return f"Hello, {name}"\n')
+            _write(repo_root, 'tests/test_sample.py', 'import unittest\nclass TestHello(unittest.TestCase): pass\n')
+
+            findings = vc.validate_directory(contracts_dir, repo_root=repo_root)
+            errors = [f for f in findings if f.level == 'ERROR']
+            self.assertEqual(errors, [], msg=[str(f) for f in findings])
+
+    def test_fixture_integro_sin_errores(self):
+        """Fixture completo con estructura repo_root válida debe pasar sin errores."""
+        with tempfile.TemporaryDirectory() as repo_root:
+            contracts_dir = os.path.join(repo_root, 'knowledge', 'contracts')
+            os.makedirs(contracts_dir, exist_ok=True)
+            _write(repo_root, 'knowledge/contracts/complete.md', VALID_CONTRACT)
+            _write(repo_root, 'src/hello.py', 'def hello(name: str) -> str:\n    return f"Hello, {name}"\n')
+            _write(repo_root, 'tests/test_sample.py', 'import unittest\nclass TestHello(unittest.TestCase): pass\n')
+
+            findings = vc.validate_directory(contracts_dir, repo_root=repo_root)
             errors = [f for f in findings if f.level == 'ERROR']
             self.assertEqual(errors, [], msg=[str(f) for f in findings])
 
 
 class TestValidatorErrors(unittest.TestCase):
-    def _run(self, content):
-        with tempfile.TemporaryDirectory() as d:
-            _write(d, 'c.md', content)
-            return vc.validate_directory(d)
+    def _run(self, content, create_files=True):
+        """Ejecuta validación sobre estructura temporal.
+
+        Si create_files=True, crea src/hello.py y tests/test_sample.py.
+        """
+        with tempfile.TemporaryDirectory() as repo_root:
+            contracts_dir = os.path.join(repo_root, 'knowledge', 'contracts')
+            os.makedirs(contracts_dir, exist_ok=True)
+            _write(repo_root, 'knowledge/contracts/c.md', content)
+            if create_files:
+                _write(repo_root, 'src/hello.py', 'def hello(name: str) -> str:\n    return f"Hello, {name}"\n')
+                _write(repo_root, 'tests/test_sample.py', 'import unittest\nclass TestHello(unittest.TestCase): pass\n')
+            return vc.validate_directory(contracts_dir, repo_root=repo_root)
 
     def _rules(self, findings):
         return {f.rule for f in findings if f.level == 'ERROR'}
@@ -157,13 +189,37 @@ class TestValidatorErrors(unittest.TestCase):
         rules = self._rules(self._run(bad))
         self.assertIn('FM_PARSE', rules)
 
+    def test_target_inexistente(self):
+        """target inexistente debe dar error FM_PATH_target."""
+        bad = VALID_CONTRACT.replace('target: src/hello.py', 'target: src/nonexistent.py')
+        rules = self._rules(self._run(bad))
+        self.assertIn('FM_PATH_target', rules)
+
+    def test_tests_inexistente(self):
+        """tests inexistente debe dar error FM_PATH_tests."""
+        bad = VALID_CONTRACT.replace('tests: "tests/test_sample.py"', 'tests: "tests/nonexistent.py"')
+        rules = self._rules(self._run(bad))
+        self.assertIn('FM_PATH_tests', rules)
+
+    def test_ambos_archivos_inexistentes(self):
+        """Si tanto target como tests no existen, debe haber ambos errores."""
+        bad = VALID_CONTRACT.replace('target: src/hello.py', 'target: src/nonexistent.py')
+        bad = bad.replace('tests: "tests/test_sample.py"', 'tests: "tests/nonexistent.py"')
+        rules = self._rules(self._run(bad))
+        self.assertIn('FM_PATH_target', rules)
+        self.assertIn('FM_PATH_tests', rules)
+
 
 class TestValidatorWarnings(unittest.TestCase):
     def test_missing_forbids_is_warning_not_error(self):
         bad = VALID_CONTRACT.replace("forbids: ['network', 'subprocess']\n", '')
-        with tempfile.TemporaryDirectory() as d:
-            _write(d, 'c.md', bad)
-            findings = vc.validate_directory(d)
+        with tempfile.TemporaryDirectory() as repo_root:
+            contracts_dir = os.path.join(repo_root, 'knowledge', 'contracts')
+            os.makedirs(contracts_dir, exist_ok=True)
+            _write(repo_root, 'knowledge/contracts/c.md', bad)
+            _write(repo_root, 'src/hello.py', 'def hello(name: str) -> str:\n    return f"Hello, {name}"\n')
+            _write(repo_root, 'tests/test_sample.py', 'import unittest\nclass TestHello(unittest.TestCase): pass\n')
+            findings = vc.validate_directory(contracts_dir, repo_root=repo_root)
         warnings = [f for f in findings if f.level == 'WARNING']
         errors = [f for f in findings if f.level == 'ERROR']
         self.assertTrue(any(f.rule == 'FM_KEY_forbids' for f in warnings))
@@ -171,22 +227,31 @@ class TestValidatorWarnings(unittest.TestCase):
 
     def test_empty_forbids_is_warning(self):
         bad = VALID_CONTRACT.replace("forbids: ['network', 'subprocess']", "forbids: []")
-        with tempfile.TemporaryDirectory() as d:
-            _write(d, 'c.md', bad)
-            findings = vc.validate_directory(d)
+        with tempfile.TemporaryDirectory() as repo_root:
+            contracts_dir = os.path.join(repo_root, 'knowledge', 'contracts')
+            os.makedirs(contracts_dir, exist_ok=True)
+            _write(repo_root, 'knowledge/contracts/c.md', bad)
+            _write(repo_root, 'src/hello.py', 'def hello(name: str) -> str:\n    return f"Hello, {name}"\n')
+            _write(repo_root, 'tests/test_sample.py', 'import unittest\nclass TestHello(unittest.TestCase): pass\n')
+            findings = vc.validate_directory(contracts_dir, repo_root=repo_root)
         warnings = [f for f in findings if f.level == 'WARNING']
         self.assertTrue(any(f.rule == 'FM_KEY_forbids' and 'vacia' in f.message
                             for f in warnings))
 
 
 class TestExitCode(unittest.TestCase):
-    def _run_main(self, content):
-        with tempfile.TemporaryDirectory() as d:
-            _write(d, 'c.md', content)
+    def _run_main(self, content, create_files=True):
+        with tempfile.TemporaryDirectory() as repo_root:
+            contracts_dir = os.path.join(repo_root, 'knowledge', 'contracts')
+            os.makedirs(contracts_dir, exist_ok=True)
+            _write(repo_root, 'knowledge/contracts/c.md', content)
+            if create_files:
+                _write(repo_root, 'src/hello.py', 'def hello(name: str) -> str:\n    return f"Hello, {name}"\n')
+                _write(repo_root, 'tests/test_sample.py', 'import unittest\nclass TestHello(unittest.TestCase): pass\n')
             real = sys.stdout
             sys.stdout = StringIO()
             try:
-                rc = vc.main(['prog', d])
+                rc = vc.main(['prog', '--repo-root', repo_root, contracts_dir])
             finally:
                 sys.stdout = real
             return rc

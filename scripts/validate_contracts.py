@@ -203,7 +203,7 @@ def _extract_sections(body):
     return sections
 
 
-def validate_file(path):
+def validate_file(path, repo_root=None):
     findings = []
     rel = path
     try:
@@ -248,6 +248,29 @@ def validate_file(path):
                                 "clave 'forbids' vacia (recomendado no vacia)",
                                 level='WARNING'))
 
+    # Validar que target y tests resuelvan a archivos existentes
+    if repo_root is None:
+        repo_root = '.'
+    repo_root = os.path.abspath(repo_root)
+
+    # Validar target
+    if 'target' in data and data['target']:
+        target_rel = data['target']
+        target_abs = os.path.abspath(os.path.join(repo_root, target_rel))
+        if not os.path.isfile(target_abs):
+            findings.append(Finding(rel, 'FM_PATH_target',
+                                    "target no existe o no es archivo: {} (resuelto a {})"
+                                    .format(target_rel, target_abs)))
+
+    # Validar tests
+    if 'tests' in data and data['tests']:
+        tests_rel = data['tests']
+        tests_abs = os.path.abspath(os.path.join(repo_root, tests_rel))
+        if not os.path.isfile(tests_abs):
+            findings.append(Finding(rel, 'FM_PATH_tests',
+                                    "tests no existe o no es archivo: {} (resuelto a {})"
+                                    .format(tests_rel, tests_abs)))
+
     # (d) secciones del cuerpo
     sections = _extract_sections(body)
     for name in REQUIRED_SECTIONS:
@@ -288,7 +311,7 @@ def _collect_files(directory):
     return None
 
 
-def validate_directory(directory):
+def validate_directory(directory, repo_root=None):
     files = _collect_files(directory)
     if files is None:
         print("ERROR: no existe el directorio o archivo: {}".format(directory))
@@ -298,19 +321,36 @@ def validate_directory(directory):
         print("INFO: no se encontraron archivos *.md en {}".format(directory))
         return []
 
+    if repo_root is None:
+        repo_root = '.'
+
     all_findings = []
     for path in files:
-        all_findings.extend(validate_file(path))
+        all_findings.extend(validate_file(path, repo_root=repo_root))
     return all_findings
 
 
 def main(argv):
-    directory = argv[1] if len(argv) > 1 else 'knowledge/contracts'
+    # Parsear argumentos: [--repo-root DIR] [directorio]
+    repo_root = None
+    directory = 'knowledge/contracts'
+
+    i = 1
+    while i < len(argv):
+        if argv[i] == '--repo-root' and i + 1 < len(argv):
+            repo_root = argv[i + 1]
+            i += 2
+        elif not argv[i].startswith('-'):
+            directory = argv[i]
+            i += 1
+        else:
+            i += 1
+
     files = _collect_files(directory)
     if files is None:
         print("ERROR: no existe el directorio o archivo: {}".format(directory))
         return 1
-    findings = validate_directory(directory)
+    findings = validate_directory(directory, repo_root=repo_root)
     n_files = len(files)
 
     errors = [f for f in findings if f.level == 'ERROR']
