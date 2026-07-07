@@ -14,7 +14,7 @@ Todo Task Contract CCDD que se escriba (p.ej. `implementar_login.md`) debe comen
 ## 2. Fusión de Metadatos (Frontmatter)
 El Frontmatter debe unificar los campos requeridos por ambas metodologías:
 - **OKF Fields:** `type` (debe ser `'Task Contract'`), `title`, `description`, `tags`.
-- **CCDD Fields:** `task`, `intent`, `target`, `signature`, `test_command`, `budget`, `tests`, `deps_allowed`.
+- **CCDD Fields:** `task`, `intent`, `target`, `signature`, `test_command`, `budget`, `tests`, `tests_sha256`, `deps_allowed`.
 
 Ejemplo:
 ```yaml
@@ -32,6 +32,7 @@ test_command: "python -m unittest verify_test.py"
 budget:
   max_cyclomatic_complexity: 4
 tests: "verify_test.py"
+tests_sha256: "a1b2c3d4e5f6..."
 ---
 ```
 

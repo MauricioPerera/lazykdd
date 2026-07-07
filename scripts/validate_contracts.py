@@ -299,37 +299,34 @@ def validate_file(path, repo_root=None):
                                     "tests no existe o no es archivo: {} (resuelto a {})"
                                     .format(tests_rel, tests_abs)))
 
-    # Validar tests_sha256 (si presente)
-    if 'tests_sha256' in data:
-        tests_sha256 = data['tests_sha256']
-        if tests_sha256:  # si la clave está presente y no es vacía
-            # Validar formato: debe ser 64 caracteres hex lowercase
-            if not _is_valid_hex_hash(tests_sha256):
-                findings.append(Finding(
-                    rel, 'FM_TESTS_FROZEN',
-                    "tests_sha256 con formato inválido (debe ser 64 chars hex lowercase): {!r}"
-                    .format(tests_sha256)))
-            # Si tests existe, validar que el hash coincida
-            elif 'tests' in data and data['tests']:
-                tests_rel = data['tests']
-                tests_abs = os.path.abspath(os.path.join(repo_root, tests_rel))
-                if os.path.isfile(tests_abs):
-                    actual_hash = _calculate_tests_hash(tests_abs)
-                    if actual_hash is None:
-                        # No se pudo leer el archivo, pero FM_PATH_tests ya lo reportó
-                        pass
-                    elif actual_hash != tests_sha256:
-                        findings.append(Finding(
-                            rel, 'FM_TESTS_FROZEN',
-                            "archivo '{}': hash esperado {}, hash actual {}"
-                            .format(tests_rel, tests_sha256, actual_hash)))
+    # Validar tests_sha256 (REQUERIDA)
+    tests_sha256 = data.get('tests_sha256')
+    if not tests_sha256:
+        # Ausente o vacía = ERROR
+        findings.append(Finding(
+            rel, 'FM_TESTS_FROZEN',
+            "clave 'tests_sha256' requerida para congelar el oraculo. Sellar con: python scripts/validate_contracts.py --hash <tests_path>"))
     else:
-        # Si tests_sha256 está ausente, es recomendado (WARNING)
-        if 'tests' in data and data['tests']:
+        # Clave presente: validar formato
+        if not _is_valid_hex_hash(tests_sha256):
             findings.append(Finding(
                 rel, 'FM_TESTS_FROZEN',
-                "clave 'tests_sha256' ausente (recomendada para congelar el oraculo)",
-                level='WARNING'))
+                "tests_sha256 con formato inválido (debe ser 64 chars hex lowercase): {!r}"
+                .format(tests_sha256)))
+        # Si tests existe, validar que el hash coincida
+        elif 'tests' in data and data['tests']:
+            tests_rel = data['tests']
+            tests_abs = os.path.abspath(os.path.join(repo_root, tests_rel))
+            if os.path.isfile(tests_abs):
+                actual_hash = _calculate_tests_hash(tests_abs)
+                if actual_hash is None:
+                    # No se pudo leer el archivo, pero FM_PATH_tests ya lo reportó
+                    pass
+                elif actual_hash != tests_sha256:
+                    findings.append(Finding(
+                        rel, 'FM_TESTS_FROZEN',
+                        "archivo '{}': hash esperado {}, hash actual {}"
+                        .format(tests_rel, tests_sha256, actual_hash)))
 
     # (d) secciones del cuerpo
     sections = _extract_sections(body)
@@ -391,13 +388,19 @@ def validate_directory(directory, repo_root=None):
 
 
 def main(argv):
-    # Parsear argumentos: [--repo-root DIR] [directorio]
+    # Parsear argumentos: [--hash RUTA] | [--repo-root DIR] [directorio]
     repo_root = None
     directory = 'knowledge/contracts'
+    hash_mode = False
+    hash_path = None
 
     i = 1
     while i < len(argv):
-        if argv[i] == '--repo-root' and i + 1 < len(argv):
+        if argv[i] == '--hash' and i + 1 < len(argv):
+            hash_mode = True
+            hash_path = argv[i + 1]
+            i += 2
+        elif argv[i] == '--repo-root' and i + 1 < len(argv):
             repo_root = argv[i + 1]
             i += 2
         elif not argv[i].startswith('-'):
@@ -406,6 +409,19 @@ def main(argv):
         else:
             i += 1
 
+    # Modo --hash: imprimir SHA256 y salir
+    if hash_mode:
+        if not hash_path:
+            print("ERROR: --hash requiere una ruta de archivo")
+            return 1
+        hash_val = _calculate_tests_hash(hash_path)
+        if hash_val is None:
+            print("ERROR: no se pudo leer el archivo: {}".format(hash_path))
+            return 1
+        print(hash_val)
+        return 0
+
+    # Modo validación normal
     files = _collect_files(directory)
     if files is None:
         print("ERROR: no existe el directorio o archivo: {}".format(directory))

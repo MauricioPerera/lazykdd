@@ -30,6 +30,7 @@ budget:
   max_cyclomatic_complexity: 2
   max_nesting_depth: 1
 tests: "tests/test_sample.py"
+tests_sha256: "c11c4064b2030dac8352c6453a128af2aedcb3ecc711aed805f22768cf54fda4"
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---
@@ -290,14 +291,19 @@ class TestTestsSha256Validation(unittest.TestCase):
         self.assertIn('tests/test_sample.py', msg)
         self.assertIn(wrong_hash, msg)
 
-    def test_sha256_absent_warning(self):
-        """(c) clave ausente → WARNING FM_TESTS_FROZEN (recomendada)"""
-        # VALID_CONTRACT ya no tiene tests_sha256
-        findings = self._run(VALID_CONTRACT)
-        warnings = [f for f in findings if f.level == 'WARNING']
-        fm_tests_frozen_warnings = [f for f in warnings if f.rule == 'FM_TESTS_FROZEN']
-        self.assertTrue(len(fm_tests_frozen_warnings) >= 1, msg=[str(f) for f in findings])
-        self.assertIn('recomendada', fm_tests_frozen_warnings[0].message)
+    def test_sha256_absent_error(self):
+        """(c) clave ausente → ERROR FM_TESTS_FROZEN con comando --hash"""
+        # Crear contrato sin tests_sha256
+        contract_without_hash = VALID_CONTRACT.replace(
+            'tests_sha256: "c11c4064b2030dac8352c6453a128af2aedcb3ecc711aed805f22768cf54fda4"\n',
+            ''
+        )
+        findings = self._run(contract_without_hash)
+        errors = [f for f in findings if f.level == 'ERROR']
+        fm_tests_frozen_errors = [f for f in errors if f.rule == 'FM_TESTS_FROZEN']
+        self.assertTrue(len(fm_tests_frozen_errors) >= 1, msg=[str(f) for f in findings])
+        # Verificar que el mensaje menciona --hash
+        self.assertIn('--hash', fm_tests_frozen_errors[0].message)
 
     def test_sha256_crlf_vs_lf_same_hash(self):
         """(d) hash con CRLF vs LF → normalización funciona"""
@@ -375,6 +381,78 @@ class TestTestsSha256Validation(unittest.TestCase):
         # Debe haber FM_PATH_tests pero no duplicar el error hash
         rules = {f.rule for f in errors}
         self.assertIn('FM_PATH_tests', rules)
+
+
+class TestHashHelper(unittest.TestCase):
+    """Tests para el helper --hash CLI."""
+
+    def test_hash_helper_prints_correct_hash(self):
+        """--hash imprime el SHA256 correcto del archivo (64 hex)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = os.path.join(tmpdir, 'test.py')
+            test_content = 'import unittest\nclass TestHello(unittest.TestCase): pass\n'
+            with open(test_file, 'w', encoding='utf-8') as f:
+                f.write(test_content)
+
+            # Capturar salida del helper
+            real_stdout = sys.stdout
+            sys.stdout = StringIO()
+            try:
+                rc = vc.main(['prog', '--hash', test_file])
+                output = sys.stdout.getvalue().strip()
+            finally:
+                sys.stdout = real_stdout
+
+            # Verificar exit code 0 y output es 64 hex
+            self.assertEqual(rc, 0)
+            self.assertEqual(len(output), 64)
+            self.assertTrue(all(c in '0123456789abcdef' for c in output))
+
+    def test_hash_helper_file_not_found(self):
+        """--hash con archivo inexistente → exit 1."""
+        nonexistent = '/nonexistent/file/path.py'
+        real_stdout = sys.stdout
+        sys.stdout = StringIO()
+        try:
+            rc = vc.main(['prog', '--hash', nonexistent])
+        finally:
+            sys.stdout = real_stdout
+
+        self.assertEqual(rc, 1)
+
+    def test_hash_helper_matches_validation(self):
+        """Hash impreso por --hash coincide con el que acepta la validación."""
+        with tempfile.TemporaryDirectory() as repo_root:
+            contracts_dir = os.path.join(repo_root, 'knowledge', 'contracts')
+            os.makedirs(contracts_dir, exist_ok=True)
+
+            test_content = 'import unittest\nclass TestHello(unittest.TestCase): pass\n'
+            test_file = os.path.join(repo_root, 'tests', 'test_sample.py')
+            _write(repo_root, 'tests/test_sample.py', test_content)
+
+            # Obtener hash con el helper
+            real_stdout = sys.stdout
+            sys.stdout = StringIO()
+            try:
+                rc = vc.main(['prog', '--hash', test_file])
+                helper_hash = sys.stdout.getvalue().strip()
+            finally:
+                sys.stdout = real_stdout
+
+            self.assertEqual(rc, 0)
+
+            # Crear contrato con ese hash
+            contract_with_hash = VALID_CONTRACT.replace(
+                'tests_sha256: "c11c4064b2030dac8352c6453a128af2aedcb3ecc711aed805f22768cf54fda4"',
+                f'tests_sha256: "{helper_hash}"'
+            )
+            _write(repo_root, 'knowledge/contracts/c.md', contract_with_hash)
+            _write(repo_root, 'src/hello.py', 'def hello(name: str) -> str:\n    return f"Hello, {name}"\n')
+
+            # Validar: debe pasar sin errores
+            findings = vc.validate_directory(contracts_dir, repo_root=repo_root)
+            errors = [f for f in findings if f.level == 'ERROR']
+            self.assertEqual(errors, [], msg=[str(f) for f in findings])
 
 
 class TestExitCode(unittest.TestCase):
