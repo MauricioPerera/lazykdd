@@ -14,6 +14,7 @@ budget:
   max_nesting_depth: 4
 tests: "tests/test_validate_rules.py"
 tests_sha256: "6fcfbbb07a6b2c1be026c9a37ef75aa30b172e2190ea3ac8fd4340c7fd9a0482"
+touch_only: ['scripts/validate_rules.py']
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---

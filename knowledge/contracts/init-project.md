@@ -14,6 +14,7 @@ budget:
   max_nesting_depth: 4
 tests: "tests/test_init_project.py"
 tests_sha256: "c94dd16dc7786d27d37c8215e0aa8f613fc681b6dbe9df55a3fab17a95a9591f"
+touch_only: ['scripts/init_project.py']
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---

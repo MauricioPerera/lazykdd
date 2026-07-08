@@ -14,6 +14,7 @@ budget:
   max_nesting_depth: 4
 tests: "tests/test_validate_changelog.py"
 tests_sha256: "9e608944105280c00ca31d1be406245c77a458fb14f00f83946701fe0df580bf"
+touch_only: ['scripts/validate_changelog.py']
 deps_allowed: []
 forbids: ['network', 'subprocess', 'llm']
 ---

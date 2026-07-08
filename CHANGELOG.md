@@ -4,6 +4,9 @@ All notable changes to the KDD Template are documented here.
 
 ## Unreleased
 
+**Contract 28 — Verifiable perimeter: "Tocar SOLO" from prose to machine** ([C28-REPORT](docs/reports/CONTRACT-28-REPORT.md))
+- Idea imported from analyzing Shepherd (shepherd-agents, arXiv 2605.10913 — the signature as the permission surface), translated to KDD's level: post-hoc diff verification instead of a syscall jail. New mandatory `touch_only` frontmatter key (the delegation perimeter as DATA, fnmatch patterns) with structural checks in `validate_contracts` (target must be covered; the frozen oracle must be OUT, except when the deliverable IS a test), plus `scripts/validate_perimeter.py`: the PM pipes `git diff --name-only` into it and any dev file outside the perimeter fails loudly (`OUT_OF_PERIMETER` / `TESTS_TOUCHED`). Own evidence: the PM had verified perimeters by hand in C24-C27 — repeated manual practice becomes a gate, per doctrine. All 19 existing contracts migrated; mini-YAML dialect now pinned 4-way. Honest scope: not a repo CI step (merged commits legitimately mix PM files); CI coverage comes via validate_contracts and the sealed oracle in the suite.
+
 **Contract 27 — CHANGELOG↔reports coherence gate: the incident made machine** ([C27-REPORT](docs/reports/CONTRACT-27-REPORT.md))
 - Seventh level-1 gate, earned from the real v1.2.0 incident (three CHANGELOG entries silently lost to a non-matching `str.replace`): every `docs/reports/CONTRACT-NN-REPORT.md` must have its `**Contract NN` entry with a report link — and vice versa, with no duplicates. The human rule ("grep-verify programmatic doc edits") is now deterministic CI. Optional layer: projects without a CHANGELOG or report history pass with INFO. Self-validating: this very entry is checked by the gate it describes.
 

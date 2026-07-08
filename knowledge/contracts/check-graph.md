@@ -14,6 +14,7 @@ budget:
   max_nesting_depth: 4
 tests: "tests/test_check_graph.py"
 tests_sha256: "c1740621cadbb77bba8919efe78e20d0f50368cbcafc9473ff42774d676858c4"
+touch_only: ['src/check_workflow_graph.py']
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---

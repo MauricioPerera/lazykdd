@@ -14,6 +14,7 @@ budget:
   max_nesting_depth: 4
 tests: "tests/test_rule_engine.py"
 tests_sha256: "154fb9f6e2645161930fb03728dedc5dde422d6aa3e55ac7a39a889cccc1c319"
+touch_only: ['scripts/rule_engine.py', 'scripts/validate_rules.py']
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---

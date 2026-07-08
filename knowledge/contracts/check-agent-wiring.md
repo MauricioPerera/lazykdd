@@ -14,6 +14,7 @@ budget:
   max_nesting_depth: 4
 tests: "tests/test_check_wiring.py"
 tests_sha256: "47d4c06151ce70ff678bc211eb837e2c9f488b22c8d6cd11ba7484ffd7c90571"
+touch_only: ['src/check_agent_wiring.py']
 deps_allowed: []
 forbids: ['network', 'subprocess', 'llm']
 ---

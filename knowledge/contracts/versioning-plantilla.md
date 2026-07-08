@@ -14,6 +14,7 @@ budget:
   max_nesting_depth: 3
 tests: "tests/test_versioning.py"
 tests_sha256: "0115ea5cd92b787cdc46f2e4717fe1d6f582fca711579d0ff2125b0416bae9e2"
+touch_only: ['tests/test_versioning.py']
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---

@@ -31,6 +31,7 @@ budget:
   max_nesting_depth: 1
 tests: "tests/test_sample.py"
 tests_sha256: "c11c4064b2030dac8352c6453a128af2aedcb3ecc711aed805f22768cf54fda4"
+touch_only: ['src/hello.py']
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---
@@ -209,6 +210,68 @@ class TestValidatorErrors(unittest.TestCase):
         rules = self._rules(self._run(bad))
         self.assertIn('FM_PATH_target', rules)
         self.assertIn('FM_PATH_tests', rules)
+
+
+class TestTouchOnly(TestValidatorErrors):
+    """Contrato 28: touch_only obligatoria — el perimetro como dato.
+
+    Semantica: lista inline no vacia de rutas/patrones repo-relativos posix,
+    matching fnmatch (un '*' cruza '/'). El target debe estar cubierto
+    (FM_TOUCH_TARGET); el archivo `tests` NO debe estarlo (FM_TOUCH_TESTS,
+    el oraculo queda fuera del perimetro) SALVO cuando tests == target (el
+    entregable ES un test).
+    """
+
+    def test_touch_only_ausente_es_error(self):
+        bad = VALID_CONTRACT.replace("touch_only: ['src/hello.py']\n", '')
+        rules = self._rules(self._run(bad))
+        self.assertIn('FM_KEY_touch_only', rules)
+
+    def test_touch_only_forma_invalida(self):
+        for raro in ("touch_only: src/hello.py",
+                     "touch_only: []",
+                     "touch_only: ['src/hello.py', '']"):
+            bad = VALID_CONTRACT.replace("touch_only: ['src/hello.py']", raro)
+            rules = self._rules(self._run(bad))
+            self.assertIn('FM_TOUCH_ONLY', rules, raro)
+
+    def test_target_no_cubierto_es_error(self):
+        bad = VALID_CONTRACT.replace("touch_only: ['src/hello.py']",
+                                     "touch_only: ['scripts/otro.py']")
+        rules = self._rules(self._run(bad))
+        self.assertIn('FM_TOUCH_TARGET', rules)
+
+    def test_target_cubierto_por_glob(self):
+        ok = VALID_CONTRACT.replace("touch_only: ['src/hello.py']",
+                                    "touch_only: ['src/*']")
+        findings = self._run(ok)
+        errors = [f for f in findings if f.level == 'ERROR']
+        self.assertEqual(errors, [], msg=[str(f) for f in errors])
+
+    def test_oraculo_cubierto_es_error(self):
+        bad = VALID_CONTRACT.replace(
+            "touch_only: ['src/hello.py']",
+            "touch_only: ['src/hello.py', 'tests/test_sample.py']")
+        rules = self._rules(self._run(bad))
+        self.assertIn('FM_TOUCH_TESTS', rules)
+
+    def test_oraculo_cubierto_por_glob_es_error(self):
+        bad = VALID_CONTRACT.replace("touch_only: ['src/hello.py']",
+                                     "touch_only: ['src/hello.py', 'tests/*']")
+        rules = self._rules(self._run(bad))
+        self.assertIn('FM_TOUCH_TESTS', rules)
+
+    def test_target_igual_a_tests_permitido(self):
+        # El entregable ES un test (p. ej. agents-context-rule): touch_only
+        # DEBE poder cubrirlo sin FM_TOUCH_TESTS.
+        ok = VALID_CONTRACT.replace('target: src/hello.py',
+                                    'target: tests/test_sample.py')
+        ok = ok.replace("touch_only: ['src/hello.py']",
+                        "touch_only: ['tests/test_sample.py']")
+        findings = self._run(ok)
+        rules = self._rules(findings)
+        self.assertNotIn('FM_TOUCH_TESTS', rules)
+        self.assertNotIn('FM_TOUCH_TARGET', rules)
 
 
 class TestValidatorWarnings(unittest.TestCase):

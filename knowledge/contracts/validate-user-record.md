@@ -14,6 +14,7 @@ budget:
   max_nesting_depth: 3
 tests: "tests/test_users.py"
 tests_sha256: "725feb13af1b36b1d28aac4cd478045cbed7fabfbcba42dc618b7538191b84a9"
+touch_only: ['src/users.py']
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---

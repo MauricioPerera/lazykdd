@@ -21,6 +21,7 @@ import os
 import sys
 import hashlib
 import re
+import fnmatch
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +158,7 @@ def parse_frontmatter(text):
 
 REQUIRED_KEYS = [
     'task', 'intent', 'target', 'signature',
-    'test_command', 'budget', 'tests', 'deps_allowed',
+    'test_command', 'budget', 'tests', 'deps_allowed', 'touch_only',
 ]
 
 REQUIRED_SECTIONS = [
@@ -327,6 +328,35 @@ def validate_file(path, repo_root=None):
                         rel, 'FM_TESTS_FROZEN',
                         "archivo '{}': hash esperado {}, hash actual {}"
                         .format(tests_rel, tests_sha256, actual_hash)))
+
+    # Contrato 28: validar touch_only (SOLO checks nuevos, no modificar anteriores)
+    touch_only = data.get('touch_only')
+
+    # FM_TOUCH_ONLY: validar forma (debe ser lista no vacia de strings no vacios)
+    if touch_only is not None:
+        is_valid_form = (isinstance(touch_only, list) and len(touch_only) > 0 and
+                         all(isinstance(item, str) and len(item) > 0 for item in touch_only))
+        if not is_valid_form:
+            findings.append(Finding(rel, 'FM_TOUCH_ONLY',
+                                    "touch_only debe ser lista no vacia de strings no vacios"))
+        else:
+            # FM_TOUCH_TARGET: el target debe estar cubierto por algún patrón
+            if 'target' in data and data['target']:
+                target_val = data['target']
+                is_covered = any(fnmatch.fnmatch(target_val, p) for p in touch_only)
+                if not is_covered:
+                    findings.append(Finding(rel, 'FM_TOUCH_TARGET',
+                                            "target '{}' no esta cubierto por ningun patron en touch_only".format(target_val)))
+
+            # FM_TOUCH_TESTS: el archivo tests NO debe estar cubierto (salvo si tests == target)
+            if 'tests' in data and data['tests']:
+                tests_val = data['tests']
+                target_val = data.get('target', '')
+                if tests_val != target_val:
+                    is_covered = any(fnmatch.fnmatch(tests_val, p) for p in touch_only)
+                    if is_covered:
+                        findings.append(Finding(rel, 'FM_TOUCH_TESTS',
+                                                "archivo tests '{}' no debe estar cubierto por ningun patron en touch_only (oraculo protegido)".format(tests_val)))
 
     # (d) secciones del cuerpo
     sections = _extract_sections(body)

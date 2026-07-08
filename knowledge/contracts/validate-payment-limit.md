@@ -14,6 +14,7 @@ budget:
   max_nesting_depth: 3
 tests: "tests/test_payment_limit.py"
 tests_sha256: "e484831ce7394394bf0e437b85570593847c687b6faf2f764852d5d5a8c8a311"
+touch_only: ['src/payment_limit.py']
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---
