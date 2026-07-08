@@ -2,7 +2,9 @@
 
 All notable changes to the KDD Template are documented here.
 
-## Unreleased
+## v1.1.0 — 2026-07-08
+
+The rule-contract line: business rules validated as declarative data, plus a resolved financial-domain example.
 
 **Contract 19 — Second domain: border control (generality proven)** ([C19-REPORT](docs/reports/CONTRACT-19-REPORT.md))
 - The papers-please vocabulary (game-protocol) expressed as pure data over the existing engine and gate: zero code for a new domain (node + rule-set + sealed golden). Second measured boundary, same class as the first: cross-field equality (`require-field-match`) stays `code_only`, matching game-protocol's own data/logic split.
