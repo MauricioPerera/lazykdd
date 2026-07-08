@@ -1,32 +1,76 @@
 {
   "_comment": "Rule-set declarativo de las reglas de compliance de pagos (dominio de knowledge/data_models/payment_limits.md), como DATOS. Verificado por equivalencia contra src/payment_limit.py (codigo, C16). Ejemplo del rule contract: knowledge/rule-contract-spec.md.",
   "required": [
-    { "field": "amount" },
-    { "field": "currency" },
-    { "field": "country" },
-    { "field": "beneficiary.account" }
+    {
+      "field": "amount"
+    },
+    {
+      "field": "currency"
+    },
+    {
+      "field": "country"
+    },
+    {
+      "field": "beneficiary.account"
+    }
   ],
   "type": [
-    { "field": "amount", "kind": "number" },
-    { "field": "currency", "kind": "string" },
-    { "field": "country", "kind": "string" },
-    { "field": "beneficiary", "kind": "dict" },
-    { "field": "beneficiary.account", "kind": "string" }
+    {
+      "field": "amount",
+      "kind": "number"
+    },
+    {
+      "field": "currency",
+      "kind": "string"
+    },
+    {
+      "field": "country",
+      "kind": "string"
+    },
+    {
+      "field": "beneficiary",
+      "kind": "dict"
+    },
+    {
+      "field": "beneficiary.account",
+      "kind": "string"
+    }
   ],
   "bounds": [
-    { "field": "amount", "gt": 0 }
+    {
+      "field": "amount",
+      "gt": 0
+    }
   ],
   "refs": [
-    { "field": "country", "collection": "limits" }
+    {
+      "field": "country",
+      "collection": "limits"
+    }
   ],
   "keyed_bounds": [
-    { "field": "amount", "key": "country", "table": "limits", "max_path": "max_amount" }
+    {
+      "field": "amount",
+      "key": "country",
+      "table": "limits",
+      "max_path": "max_amount"
+    }
   ],
   "keyed_enums": [
-    { "field": "currency", "key": "country", "table": "limits", "values_path": "allowed_currencies" }
+    {
+      "field": "currency",
+      "key": "country",
+      "table": "limits",
+      "values_path": "allowed_currencies"
+    }
   ],
   "enums": [
-    { "field": "beneficiary.verified", "values": [true] }
+    {
+      "field": "beneficiary.verified",
+      "values": [
+        true
+      ]
+    }
   ],
   "code_only": [
     {
@@ -34,5 +78,9 @@
       "field": "beneficiary.verified",
       "reason": "El enum por igualdad de valor cubre casi todos los fallos de verified (False, None, strings), pero NO el edge numerico-truthy: en Python 1 == True y hash(1) == hash(True), asi que 1 pertenece a [true]. Distinguir True exacto de 1 es identidad/tipo, no un conjunto de valores: esa parte del KYC vive en codigo (src/payment_limit.py usa 'is True')."
     }
-  ]
+  ],
+  "golden": {
+    "path": "payment-golden.json",
+    "sha256": "b8d6868a74fecfb73ab243df50e1656abda0bd9ff55dd42e02f5c5b9e53515e2"
+  }
 }

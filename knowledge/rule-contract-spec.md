@@ -44,8 +44,19 @@ codigo en el motor ("eso es logica, no dato"). Un rule contract marca esas regla
 La frontera documentada ES parte del contrato, no un fallo: dice donde termina lo
 declarativo para ese dominio.
 
-## Conformidad
+## Conformidad y ciclo de vida (gate: `scripts/validate_rules.py`)
 
-Un rule contract es valido si: el rule-set solo usa familias soportadas o marca
-`code_only`; el motor sobre el rule-set reproduce el golden set congelado; y las reglas
-`code_only` estan documentadas con su razon.
+Un rule contract es **valido** si pasa el gate determinista
+`python scripts/validate_rules.py <dir>`: rule-set con SOLO claves conocidas (las 7
+familias + `_comment`/`code_only`/`golden`; una clave desconocida es ERROR — un typo no
+puede degradar a regla ignorada), clave `golden: {path, sha256}` presente y con el sello
+vigente (sha256 LF-normalizado del golden, mismo algoritmo que `tests_sha256`; se sella
+con `python scripts/validate_contracts.py --hash <golden>`), golden bien formado, reglas
+`code_only` con razon, y **el motor reproduce el golden** (`violations - code_only_miss`
+por caso). Queda **verified** cuando ese gate corre en CI. Un cambio legitimo de reglas o
+de golden exige re-sellar: el diff del sello hace visible el cambio en review.
+
+Ubicacion: los rule contracts viven en un directorio propio fuera de `knowledge/` (en la
+plantilla: `examples/rules/`); la capa es OPCIONAL — directorio ausente o vacio pasa el
+gate con INFO. La doc del dominio es un nodo OKF normal que referencia el rule-set por
+ruta.
