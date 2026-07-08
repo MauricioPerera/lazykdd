@@ -22,5 +22,6 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
   - [Registro de servidores MCP](./data_models/mcp_registry.md)
   - [Cableado de agentes](./data_models/agent_wiring.md)
   - [Convención UX/accesibilidad](./data_models/ux_page_contract.md)
+  - [Convención de mensaje de commit](./data_models/commit_message_contract.md)
 - [Arquitectura](./architecture/)
   - [Arquitectura general](./architecture/overview.md)

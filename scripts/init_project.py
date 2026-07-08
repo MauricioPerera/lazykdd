@@ -76,6 +76,8 @@ MANIFEST = (
     "examples/rules/agent-wiring-golden.json",
     "examples/ux-page/demo.html",
     "knowledge/data_models/ux_page_contract.md",
+    "examples/git/commit-convention.json",
+    "knowledge/data_models/commit_message_contract.md",
 )
 
 _LINK_RE = re.compile(r"\]\(([^)]+)\)")
