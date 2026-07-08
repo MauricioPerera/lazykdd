@@ -11,7 +11,7 @@ tags: ['upgrade', 'versionado', 'template', 'infra', 'procedimiento']
 
 Estos artefactos forman parte del tooling y las convenciones del template. Al upgrade de una nueva versión de la plantilla, **se pueden y deben ser sobrescritos** para traer mejoras, correcciones de seguridad y nuevas características:
 
-- **Validadores y herramientas:** `scripts/validate_contracts.py`, `scripts/validate_okf.py`, `scripts/validate_specs.py`, `scripts/export_gate_contract.py`, `scripts/assemble_context.py`, `scripts/init_project.py`, `scripts/lint_ascii.py`, `scripts/rule_engine.py`, `scripts/validate_rules.py`, `scripts/validate_skills.py`, `scripts/validate_changelog.py`
+- **Validadores y herramientas:** `scripts/validate_contracts.py`, `scripts/validate_okf.py`, `scripts/validate_specs.py`, `scripts/export_gate_contract.py`, `scripts/assemble_context.py`, `scripts/init_project.py`, `scripts/lint_ascii.py`, `scripts/rule_engine.py`, `scripts/validate_rules.py`, `scripts/validate_skills.py`, `scripts/validate_changelog.py`, `scripts/validate_perimeter.py`
 - **Configuración de contexto:** `ccdd/context.json`
 - **Reglas de agentes:** `.agents/AGENTS.md`
 - **Documentación de metodología:** `knowledge/OKF-SPEC.md`, `knowledge/metodologia-ejecucion.md`, `knowledge/validacion.md`, `knowledge/rule-contract-spec.md`
