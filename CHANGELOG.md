@@ -2,6 +2,19 @@
 
 All notable changes to the KDD Template are documented here.
 
+## v1.2.0 — 2026-07-08
+
+The rule-contract line completes its boundary map: quantification over collections joins the declarative families, and the remaining boundary classes are closed by code, with the data+code pair demonstrated on two domains.
+
+**Contract 22 — Graph-cycle checker: boundary #3 closed by code** ([C22-REPORT](docs/reports/CONTRACT-22-REPORT.md))
+- The workflow domain's global-graph boundary ("no cycles between nodes", inexpressible by declarative families) closed the way the doctrine mandates: a code task contract (`find_graph_cycles`, canonical cycle form, diamond-safe DFS) with a frozen oracle. Cross-checked: the C20 golden's FRONTERA case, invisible to the declarative checker, is now caught by code.
+
+**Contract 21 — Didactic example: message router (event -> decision, both forms)** ([C21-REPORT](docs/reports/CONTRACT-21-REPORT.md))
+- Minimal answer to "can I contract: if a message arrives and the sender is Y run A, else B?": the decision as pure code (`route_message` with a frozen oracle pinning the implicit edges) AND the audit of taken decisions as data (`keyed_enums`), on the same domain, with cross-form coherence verified. The open-world `else` boundary is exercised in the golden (`code_only_miss`), not just declared.
+
+**Contract 20 — Workflows as a domain + `each` family (quantification over collections)** ([C20-REPORT](docs/reports/CONTRACT-20-REPORT.md))
+- Third rule-contract domain: workflow/automation policy (n8n-shaped JSON) — per-environment timeout caps, mandatory error handling, and per-node rules (every httpRequest has a timeout, no inline credentials, allowed node types). Per-node rules required the new `each` family (forall over collections, evidence-first), keeping the previous goldens byte-intact as regression canaries. Third boundary class measured and declared: global graph properties stay `code_only` (closed in C22).
+
 ## v1.1.0 — 2026-07-08
 
 The rule-contract line: business rules validated as declarative data, plus a resolved financial-domain example.
