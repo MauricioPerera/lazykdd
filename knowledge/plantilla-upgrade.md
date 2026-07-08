@@ -11,7 +11,7 @@ tags: ['upgrade', 'versionado', 'template', 'infra', 'procedimiento']
 
 Estos artefactos forman parte del tooling y las convenciones del template. Al upgrade de una nueva versión de la plantilla, **se pueden y deben ser sobrescritos** para traer mejoras, correcciones de seguridad y nuevas características:
 
-- **Validadores y herramientas:** `scripts/validate_contracts.py`, `scripts/validate_okf.py`, `scripts/validate_specs.py`, `scripts/export_gate_contract.py`, `scripts/assemble_context.py`, `scripts/init_project.py`, `scripts/lint_ascii.py`, `scripts/rule_engine.py`, `scripts/validate_rules.py`
+- **Validadores y herramientas:** `scripts/validate_contracts.py`, `scripts/validate_okf.py`, `scripts/validate_specs.py`, `scripts/export_gate_contract.py`, `scripts/assemble_context.py`, `scripts/init_project.py`, `scripts/lint_ascii.py`, `scripts/rule_engine.py`, `scripts/validate_rules.py`, `scripts/validate_skills.py`, `scripts/validate_changelog.py`
 - **Configuración de contexto:** `ccdd/context.json`
 - **Reglas de agentes:** `.agents/AGENTS.md`
 - **Documentación de metodología:** `knowledge/OKF-SPEC.md`, `knowledge/metodologia-ejecucion.md`, `knowledge/validacion.md`, `knowledge/rule-contract-spec.md`
@@ -93,6 +93,10 @@ python scripts/validate_specs.py specs
 # Lint ASCII de los scripts y gate de rule contracts (capa opcional)
 python scripts/lint_ascii.py scripts
 python scripts/validate_rules.py examples/rules
+
+# Gates de skills de agente y de coherencia CHANGELOG-reportes (capas opcionales)
+python scripts/validate_skills.py skills .agents/skills
+python scripts/validate_changelog.py
 
 # Corre la suite de tests
 python -m unittest discover -s tests -p "test_*.py"

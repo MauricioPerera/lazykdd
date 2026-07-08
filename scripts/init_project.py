@@ -25,9 +25,9 @@ from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Manifiesto explicito de artefactos de EJEMPLO (sin heuristicas).
-# Quien clona la plantilla hereda estos 8 mezclados con la infraestructura;
-# el init los quita para que la plantilla estrenada nazca limpia y los 3
-# gates (validate_contracts, validate_okf, unittest discover) sigan verdes.
+# Quien clona la plantilla hereda estos artefactos mezclados con la
+# infraestructura; el init los quita para que la plantilla estrenada nazca
+# limpia y los gates de nivel 1 + la suite sigan verdes.
 # Nada fuera del manifiesto se elimina.
 # ---------------------------------------------------------------------------
 MANIFEST = (
