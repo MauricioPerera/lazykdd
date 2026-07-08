@@ -1,0 +1,46 @@
+{
+ "_comment": "Rule contract del dominio cableado de agentes. Formato del record, capas y frontera: knowledge/data_models/agent_wiring.md. La integridad referencial (skill/server/agente referenciados deben existir) es code_only: refs bajo each, primera aparicion de la clase — cerrada por src/check_agent_wiring.py (Contrato 26).",
+ "required": [
+  {"field": "agents"}
+ ],
+ "each": [
+  {
+   "collection": "agents",
+   "rules": {
+    "required": [{"field": "name"}, {"field": "model"}],
+    "matches": [{"field": "name", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"}],
+    "enums": [{"field": "model", "values": ["haiku", "sonnet", "opus", "fable"]}],
+    "type": [{"field": "max_redelegations", "kind": "number"}],
+    "bounds": [{"field": "max_redelegations", "min": 0, "max": 2}]
+   }
+  },
+  {
+   "collection": "agent_skills",
+   "rules": {
+    "required": [{"field": "agent"}, {"field": "skill"}]
+   }
+  },
+  {
+   "collection": "agent_mcp",
+   "rules": {
+    "required": [{"field": "agent"}, {"field": "server"}]
+   }
+  }
+ ],
+ "code_only": [
+  {
+   "rule": "referencia-existente-skills",
+   "field": "agent_skills",
+   "reason": "la existencia de la skill/agente referenciados exige mirar OTRA coleccion del record (refs bajo each, primera aparicion de la clase; no se agrega familia sin repeticion) — cerrada por codigo en src/check_agent_wiring.py"
+  },
+  {
+   "rule": "referencia-existente-mcp",
+   "field": "agent_mcp",
+   "reason": "idem agent_skills para servidores MCP: integridad referencial cross-coleccion, cerrada por codigo en src/check_agent_wiring.py"
+  }
+ ],
+ "golden": {
+  "path": "agent-wiring-golden.json",
+  "sha256": "9b567dbd7372f07e13030f03f47648521c195678e7e56e6f0d0054d6584525c4"
+ }
+}

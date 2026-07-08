@@ -4,6 +4,9 @@ All notable changes to the KDD Template are documented here.
 
 ## Unreleased
 
+**Contract 26 — Agent wiring: the agent–skills–MCP triangle as a contract** ([C26-REPORT](docs/reports/CONTRACT-26-REPORT.md))
+- Eighth rule-contract domain, answering "can an agent itself be contracted?" in three honest layers: agent-definition files (RECON found ZERO real ones — that gate is deliberately NOT built, evidence-first), the WIRING (this domain: which agent uses which skills/MCP servers, model tier enum, the real max-2-redelegations policy as `bounds`), and behavior (not deterministically contractable — that's CCDD's thesis: contract the artifact, not the agent). New boundary class measured: referential integrity under quantification (`refs`-inside-`each`, first appearance ⇒ no new family) — declared `code_only` and closed by code (`check_agent_wiring`, C22 precedent), de-facto chaining this domain to the C24 skills gate and C25 MCP registry.
+
 **Contract 25 — MCP-server registry as a domain + `matches` family (text properties)** ([C25-REPORT](docs/reports/CONTRACT-25-REPORT.md))
 - Seventh rule-contract domain, sourced from a real RECON: the user's live MCP config had literal passwords in `env` — exactly what a committable registry must forbid. Declarative policy: valid transports, stdio requires `command`, streamable-http requires an `https` URL, kebab-case names, and secrets ONLY as `${VAR}` references. The secrets/kebab rules are TEXT properties — the boundary class C23 measured and deferred; its second appearance triggered the evidence-first extension: new `matches` family (`{field, pattern}`, `re.search`, skips None/non-string) available top-level and inside `each`. Honest boundaries: live-server behavior stays `code_only` (network, out of level 1); server-name uniqueness is closed by construction of the source format. Previous goldens byte-intact as regression canaries; no real config or secret ever committed.
 

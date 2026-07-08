@@ -1,0 +1,92 @@
+{
+ "_comment": "Golden set congelado del dominio cableado de agentes (fixtures sinteticos modelados sobre el flujo PM nativo + devs haiku). 'violations' = campos top-level con >=1 violacion; 'code_only_miss' = lo que el declarativo no alcanza (integridad referencial bajo each, cerrada por src/check_agent_wiring.py). Dominio: knowledge/data_models/agent_wiring.md.",
+ "refs": {},
+ "cases": [
+  {
+   "name": "cableado valido",
+   "record": {
+    "agents": [
+     {"name": "pm-nativo", "model": "fable", "max_redelegations": 2},
+     {"name": "dev-efimero", "model": "haiku", "max_redelegations": 0}
+    ],
+    "skills_registry": ["pm-native-ccdd", "delegar-glm-ccdd"],
+    "mcp_registry": ["ccdd-complexity", "pocketbase"],
+    "agent_skills": [
+     {"agent": "pm-nativo", "skill": "pm-native-ccdd"},
+     {"agent": "dev-efimero", "skill": "delegar-glm-ccdd"}
+    ],
+    "agent_mcp": [{"agent": "pm-nativo", "server": "ccdd-complexity"}]
+   },
+   "violations": [],
+   "code_only_miss": []
+  },
+  {
+   "name": "sin agents",
+   "record": {"skills_registry": [], "mcp_registry": [], "agent_skills": [], "agent_mcp": []},
+   "violations": ["agents"],
+   "code_only_miss": []
+  },
+  {
+   "name": "modelo invalido",
+   "record": {
+    "agents": [{"name": "pm-nativo", "model": "gpt-9"}],
+    "skills_registry": [], "mcp_registry": [], "agent_skills": [], "agent_mcp": []
+   },
+   "violations": ["agents"],
+   "code_only_miss": []
+  },
+  {
+   "name": "name no kebab",
+   "record": {
+    "agents": [{"name": "PM_Nativo", "model": "fable"}],
+    "skills_registry": [], "mcp_registry": [], "agent_skills": [], "agent_mcp": []
+   },
+   "violations": ["agents"],
+   "code_only_miss": []
+  },
+  {
+   "name": "re-delegaciones fuera de politica",
+   "record": {
+    "agents": [{"name": "pm-nativo", "model": "fable", "max_redelegations": 3}],
+    "skills_registry": [], "mcp_registry": [], "agent_skills": [], "agent_mcp": []
+   },
+   "violations": ["agents"],
+   "code_only_miss": []
+  },
+  {
+   "name": "cableado sin skill declarada",
+   "record": {
+    "agents": [{"name": "pm-nativo", "model": "fable"}],
+    "skills_registry": [], "mcp_registry": [],
+    "agent_skills": [{"agent": "pm-nativo"}],
+    "agent_mcp": []
+   },
+   "violations": ["agent_skills"],
+   "code_only_miss": []
+  },
+  {
+   "name": "frontera code_only: skill fantasma",
+   "record": {
+    "agents": [{"name": "pm-nativo", "model": "fable"}],
+    "skills_registry": ["pm-native-ccdd"],
+    "mcp_registry": ["ccdd-complexity"],
+    "agent_skills": [{"agent": "pm-nativo", "skill": "skill-fantasma"}],
+    "agent_mcp": []
+   },
+   "violations": ["agent_skills"],
+   "code_only_miss": ["agent_skills"]
+  },
+  {
+   "name": "frontera code_only: server fantasma",
+   "record": {
+    "agents": [{"name": "pm-nativo", "model": "fable"}],
+    "skills_registry": ["pm-native-ccdd"],
+    "mcp_registry": [],
+    "agent_skills": [],
+    "agent_mcp": [{"agent": "pm-nativo", "server": "mcp-fantasma"}]
+   },
+   "violations": ["agent_mcp"],
+   "code_only_miss": ["agent_mcp"]
+  }
+ ]
+}

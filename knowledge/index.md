@@ -20,5 +20,6 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
   - [Politica de ruteo de mensajes](./data_models/message_routing.md)
   - [Estilo editorial de articulos](./data_models/editorial_style.md)
   - [Registro de servidores MCP](./data_models/mcp_registry.md)
+  - [Cableado de agentes](./data_models/agent_wiring.md)
 - [Arquitectura](./architecture/)
   - [Arquitectura general](./architecture/overview.md)

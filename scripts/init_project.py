@@ -68,6 +68,12 @@ MANIFEST = (
     "examples/rules/mcp-registry.rules.json",
     "examples/rules/mcp-golden.json",
     "knowledge/data_models/mcp_registry.md",
+    "src/check_agent_wiring.py",
+    "tests/test_check_wiring.py",
+    "knowledge/contracts/check-agent-wiring.md",
+    "knowledge/data_models/agent_wiring.md",
+    "examples/rules/agent-wiring.rules.json",
+    "examples/rules/agent-wiring-golden.json",
 )
 
 _LINK_RE = re.compile(r"\]\(([^)]+)\)")
