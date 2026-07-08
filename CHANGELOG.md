@@ -2,6 +2,11 @@
 
 All notable changes to the KDD Template are documented here.
 
+## Unreleased
+
+**Contract 27 — CHANGELOG↔reports coherence gate: the incident made machine** ([C27-REPORT](docs/reports/CONTRACT-27-REPORT.md))
+- Seventh level-1 gate, earned from the real v1.2.0 incident (three CHANGELOG entries silently lost to a non-matching `str.replace`): every `docs/reports/CONTRACT-NN-REPORT.md` must have its `**Contract NN` entry with a report link — and vice versa, with no duplicates. The human rule ("grep-verify programmatic doc edits") is now deterministic CI. Optional layer: projects without a CHANGELOG or report history pass with INFO. Self-validating: this very entry is checked by the gate it describes.
+
 ## v1.3.0 — 2026-07-08
 
 Contracts turn to the agent ecosystem itself: an editorial domain beyond "logic", the first gate custodying REAL repo assets (agent skills), the MCP-server registry with the evidence-earned `matches` family, and the agent–skills–MCP wiring closing the triangle — with the honest boundary map extended to five measured classes.

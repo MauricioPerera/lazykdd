@@ -37,6 +37,9 @@ jobs:
       - name: Validate agent skills
         run: python scripts/validate_skills.py skills .agents/skills
 
+      - name: Validate changelog coherence
+        run: python scripts/validate_changelog.py
+
       - name: Run unit tests (1/2)
         run: python -m unittest discover -s tests -p "test_*.py"
 

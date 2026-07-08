@@ -32,3 +32,7 @@ Complemento verificado: exigir sección de **trade-offs** en el reporte del agen
 ## verificar-antes-de-limpiar (VERIFICAR)
 
 Un token de prueba se borró ANTES de observar el 401 de su revocación — el 200 inmediato era solo propagación del secret y ya no quedaba con qué re-testear. Se resolvió con un canario nuevo (alta → verificar → revocar → verificar 401 → recién entonces borrar). Regla derivada: el artefacto de prueba se conserva hasta CONFIRMAR el estado final; y en sistemas de propagación eventual, un resultado inmediato contrario al esperado se re-verifica con reintentos espaciados antes de concluir.
+
+## replace-silencioso-en-docs (CERRAR / documentación)
+
+En el ciclo de v1.2.0, tres entradas del CHANGELOG (C20-C22) se perdieron: un `str.replace('## Unreleased...')` no matcheó (la sección ya no existía tras el release anterior) y el script imprimió éxito igual, tres veces. Se descubrió recién al cortar v1.2.0 ("nothing to commit"). Regla derivada: toda edición programática de documentación se verifica con grep de PRESENCIA antes de commitear, o se hace con una herramienta de edición que falle ruidoso si el ancla no existe. La regla humana quedó automatizada en el gate `scripts/validate_changelog.py` (Contrato 27): todo reporte de contrato exige su entrada en el CHANGELOG, y viceversa — la clase entera de este incidente ahora rompe el CI en vez de perderse en silencio.
