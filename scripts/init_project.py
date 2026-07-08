@@ -61,6 +61,10 @@ MANIFEST = (
     "src/check_workflow_graph.py",
     "tests/test_check_graph.py",
     "knowledge/contracts/check-graph.md",
+    "src/validate_article.py",
+    "tests/test_validate_article.py",
+    "knowledge/contracts/validate-article.md",
+    "knowledge/data_models/editorial_style.md",
 )
 
 _LINK_RE = re.compile(r"\]\(([^)]+)\)")

@@ -2,6 +2,11 @@
 
 All notable changes to the KDD Template are documented here.
 
+## Unreleased
+
+**Contract 23 — Editorial contract: article style as a gate** ([C23-REPORT](docs/reports/CONTRACT-23-REPORT.md))
+- Fifth example domain, beyond "logic": deterministic editorial rules (length, structure, forbidden lexicon, raw-URL/table/H1 bans, paragraph caps) as a pre-publication gate, with the style table passed as an argument (reusable across publications). Judgment rules (hook quality, tone, humor) are declared OUT by contract — Tier-2/human territory. Fourth boundary class measured: text properties (no `length`/`matches` declarative families; code-form domain per the evidence-first doctrine).
+
 ## v1.2.0 — 2026-07-08
 
 The rule-contract line completes its boundary map: quantification over collections joins the declarative families, and the remaining boundary classes are closed by code, with the data+code pair demonstrated on two domains.
