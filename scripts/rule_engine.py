@@ -4,6 +4,8 @@ Evalua un record contra un rule-set declarativo (required/type/enums/bounds/refs
 y devuelve las violaciones, sin LLM ni red. Puro, determinista, stdlib.
 """
 
+import re
+
 
 def evaluate(ruleset: dict, record: dict, refs: dict) -> list:
     """Evalua `record` contra `ruleset` (familias declarativas), resolviendo las
@@ -91,6 +93,20 @@ def evaluate(ruleset: dict, record: dict, refs: dict) -> list:
                 if value not in values:
                     elem_violations.append(format_violation(field, "not in enum"))
 
+        # Procesar familia 'matches'
+        if "matches" in ruleset_v1:
+            for rule in ruleset_v1["matches"]:
+                field = rule["field"]
+                pattern = rule["pattern"]
+                value = get_value(record_elem, field)
+
+                # matches solo aplica si el valor es string (ausente/None se salta)
+                if value is None or not isinstance(value, str):
+                    continue
+
+                if not re.search(pattern, value):
+                    elem_violations.append(format_violation(field, "pattern mismatch"))
+
         return elem_violations
 
     # Procesar familia 'required'
@@ -152,6 +168,20 @@ def evaluate(ruleset: dict, record: dict, refs: dict) -> list:
             # Igualdad de valor (in)
             if value not in values:
                 violations.append(format_violation(field, "not in enum"))
+
+    # Procesar familia 'matches'
+    if "matches" in ruleset:
+        for rule in ruleset["matches"]:
+            field = rule["field"]
+            pattern = rule["pattern"]
+            value = get_value(record, field)
+
+            # matches solo aplica si el valor es string (ausente/None se salta)
+            if value is None or not isinstance(value, str):
+                continue
+
+            if not re.search(pattern, value):
+                violations.append(format_violation(field, "pattern mismatch"))
 
     # Procesar familia 'refs'
     if "refs" in ruleset:

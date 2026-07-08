@@ -127,6 +127,38 @@ class TestFamilias(unittest.TestCase):
             self.assertIn("FAMILIA", _rules(findings))
             self.assertTrue(any("requird" in f["msg"] for f in findings), findings)
 
+    def test_matches_es_familia_conocida(self):
+        # Contrato 25: matches (propiedad de texto) es familia valida, top-level
+        # y el par golden+rules con matches pasa completo (incluida REPRO).
+        rs = {
+            "required": [{"field": "name"}],
+            "matches": [{"field": "name",
+                         "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"}],
+        }
+        golden = {
+            "refs": {},
+            "cases": [
+                {"name": "valido", "record": {"name": "mi-servidor"},
+                 "violations": [], "code_only_miss": []},
+                {"name": "no kebab", "record": {"name": "Mal_Nombre"},
+                 "violations": ["name"], "code_only_miss": []},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            _write_pair(d, ruleset=rs, golden=golden)
+            findings = validate_rules(d)
+            self.assertEqual(findings, [], msg=findings)
+
+    def test_matchess_typo_es_error(self):
+        rs = dict(RULESET_OK)
+        rs["matchess"] = [{"field": "a", "pattern": "^x$"}]  # typo
+        with tempfile.TemporaryDirectory() as d:
+            _write_pair(d, ruleset=rs)
+            findings = validate_rules(d)
+            self.assertIn("FAMILIA", _rules(findings))
+            self.assertTrue(any("matchess" in f["msg"] for f in findings),
+                            findings)
+
 
 class TestGolden(unittest.TestCase):
     def test_sin_clave_golden(self):

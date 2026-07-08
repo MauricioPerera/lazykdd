@@ -4,6 +4,9 @@ All notable changes to the KDD Template are documented here.
 
 ## Unreleased
 
+**Contract 25 — MCP-server registry as a domain + `matches` family (text properties)** ([C25-REPORT](docs/reports/CONTRACT-25-REPORT.md))
+- Seventh rule-contract domain, sourced from a real RECON: the user's live MCP config had literal passwords in `env` — exactly what a committable registry must forbid. Declarative policy: valid transports, stdio requires `command`, streamable-http requires an `https` URL, kebab-case names, and secrets ONLY as `${VAR}` references. The secrets/kebab rules are TEXT properties — the boundary class C23 measured and deferred; its second appearance triggered the evidence-first extension: new `matches` family (`{field, pattern}`, `re.search`, skips None/non-string) available top-level and inside `each`. Honest boundaries: live-server behavior stays `code_only` (network, out of level 1); server-name uniqueness is closed by construction of the source format. Previous goldens byte-intact as regression canaries; no real config or secret ever committed.
+
 **Contract 24 — Agent-skills gate: real repo assets under machine custody** ([C24-REPORT](docs/reports/CONTRACT-24-REPORT.md))
 - First gate guarding REAL repo assets instead of examples: `scripts/validate_skills.py` (level-1 gate + CI step, dual-OS) validates the agent skills in `skills/` and `.agents/skills` — SKILL.md presence, parseable frontmatter (mini-YAML dialect now pinned 3-way by the parser-coherence test), kebab-case `name` matching its directory and unique across dirs, `description` length within data-informed bounds [50, 1024], non-empty body, and resolving relative links (code spans/fences stripped). The gate's own RECON found and fixed 3 real broken links in the live skill copies (operative-first, byte-identical sync doctrine). Optional layer: missing dir passes with INFO.
 

@@ -65,6 +65,9 @@ MANIFEST = (
     "tests/test_validate_article.py",
     "knowledge/contracts/validate-article.md",
     "knowledge/data_models/editorial_style.md",
+    "examples/rules/mcp-registry.rules.json",
+    "examples/rules/mcp-golden.json",
+    "knowledge/data_models/mcp_registry.md",
 )
 
 _LINK_RE = re.compile(r"\]\(([^)]+)\)")

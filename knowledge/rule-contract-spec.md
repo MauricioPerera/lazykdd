@@ -35,7 +35,8 @@ sin ejecutar código. Contexto de la metodología: [metodologia-ejecucion](./met
 | `refs`         | un campo debe existir como clave en una coleccion de `refs`.        |
 | `keyed_bounds` | el tope de un campo se busca en una tabla `refs` por otro campo.    |
 | `keyed_enums`  | el conjunto permitido de un campo depende de otro campo (via `refs`).|
-| `each`         | cuantificacion sobre colecciones: `{collection, where?, rules}` evalua el subset interno v1 (`required/type/enums/bounds`) sobre cada elemento de la lista, filtrado por `where {field, equals}`; violaciones con prefijo de la coleccion. |
+| `matches`      | propiedad de texto: `{field, pattern}` — el valor string debe matchear el regex (`re.search`; anclar con `^...$` para match total). Ausente/None y no-string se saltan (trabajo de `required`/`type`). Agregada por evidencia en el Contrato 25 (segunda aparición de la clase: editorial C23 → registro MCP C25). |
+| `each`         | cuantificacion sobre colecciones: `{collection, where?, rules}` evalua el subset interno v1 (`required/type/enums/bounds/matches`) sobre cada elemento de la lista, filtrado por `where {field, equals}`; violaciones con prefijo de la coleccion. |
 
 ## Frontera dato/logica (honesta)
 

@@ -13,7 +13,7 @@ budget:
   max_cyclomatic_complexity: 10
   max_nesting_depth: 4
 tests: "tests/test_rule_engine.py"
-tests_sha256: "bb5e2dbef425268691b7af7af58db95846db5f0311658be18c2e0e5347ac904a"
+tests_sha256: "154fb9f6e2645161930fb03728dedc5dde422d6aa3e55ac7a39a889cccc1c319"
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---

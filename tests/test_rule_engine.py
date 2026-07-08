@@ -20,8 +20,13 @@ Semantica por familia (cada una produce a lo sumo una violacion por campo):
 - keyed_bounds: max = refs[table][record[key]][max_path]; si el valor (number) > max -> violacion.
 - keyed_enums: allowed = refs[table][record[key]][values_path]; si el valor no esta -> violacion.
   Las familias keyed se saltan (sin violacion) si la clave no resuelve en la tabla.
+- matches (propiedad de texto, Contrato 25): {field, pattern} — viola si el valor es
+  string y re.search(pattern, valor) NO matchea (el autor ancla con ^...$ si quiere
+  match total). Ausente/None se salta (trabajo de required); no-string se salta
+  (trabajo de type) — coherente con bounds, que saltea no-numeros. Mensaje de la
+  violacion: "pattern mismatch".
 - each (cuantificacion sobre colecciones): {collection, where?, rules} — evalua el subset
-  interno v1 (required/type/enums/bounds, misma semantica de arriba) sobre CADA elemento
+  interno v1 (required/type/enums/bounds/matches, misma semantica de arriba) sobre CADA elemento
   dict de record[collection] (lista), filtrado por where {field, equals} si esta. Toda
   violacion se emite con el prefijo del nombre de la coleccion ("<collection>: elemento
   <i>...": el campo top-level ES la coleccion). Coleccion ausente o no-lista -> se salta;
@@ -203,6 +208,82 @@ class TestEach(unittest.TestCase):
         v = _run(self.RS, {"nodes": [5]})
         self.assertEqual(len(v), 1, v)
         self.assertTrue(v[0].startswith("nodes"), v[0])
+
+
+class TestMatches(unittest.TestCase):
+    KEBAB = r"^[a-z0-9]+(-[a-z0-9]+)*$"
+    ENVREF = r"^\$\{[A-Z_][A-Z0-9_]*\}$"
+
+    def test_match_y_no_match(self):
+        rs = {"matches": [{"field": "name", "pattern": self.KEBAB}]}
+        self.assertEqual(_run(rs, {"name": "mi-servidor"}), [])
+        v = _run(rs, {"name": "Mi_Servidor"})
+        self.assertEqual(len(v), 1, v)
+        self.assertTrue(v[0].startswith("name"), v[0])
+        self.assertIn("pattern mismatch", v[0])
+
+    def test_search_sin_anclas_es_substring(self):
+        # re.search: sin anclas, matchea en cualquier parte del string.
+        rs = {"matches": [{"field": "url", "pattern": "https://"}]}
+        self.assertEqual(_run(rs, {"url": "ver https://x.com"}), [])
+        self.assertEqual(len(_run(rs, {"url": "http://x.com"})), 1)
+
+    def test_env_ref_ancla_total(self):
+        rs = {"matches": [{"field": "value", "pattern": self.ENVREF}]}
+        self.assertEqual(_run(rs, {"value": "${PB_ADMIN_PASSWORD}"}), [])
+        # un secreto literal NO es referencia -> violacion
+        self.assertEqual(len(_run(rs, {"value": "hunter2"})), 1)
+        # referencia embebida en mas texto tampoco (ancla total)
+        self.assertEqual(len(_run(rs, {"value": "x${VAR}y"})), 1)
+
+    def test_ausente_none_y_no_string_se_saltan(self):
+        rs = {"matches": [{"field": "a", "pattern": self.KEBAB}]}
+        self.assertEqual(_run(rs, {}), [])
+        self.assertEqual(_run(rs, {"a": None}), [])
+        self.assertEqual(_run(rs, {"a": 42}), [])
+        self.assertEqual(_run(rs, {"a": ["x"]}), [])
+
+    def test_campo_punteado(self):
+        rs = {"matches": [{"field": "meta.slug", "pattern": self.KEBAB}]}
+        v = _run(rs, {"meta": {"slug": "NO KEBAB"}})
+        self.assertEqual(len(v), 1, v)
+        self.assertTrue(v[0].startswith("meta.slug"), v[0])
+
+    def test_matches_dentro_de_each(self):
+        rs = {"each": [{"collection": "servers",
+                        "rules": {"matches": [{"field": "name",
+                                               "pattern": self.KEBAB}]}}]}
+        rec = {"servers": [{"name": "vps"}, {"name": "Mal_Nombre"},
+                           {"name": "ccdd-complexity"}]}
+        v = _run(rs, rec)
+        self.assertEqual(len(v), 1, v)
+        self.assertTrue(v[0].startswith("servers"), v[0])
+        self.assertIn("elemento 1", v[0])
+        self.assertIn("pattern mismatch", v[0])
+
+    def test_matches_en_each_con_where(self):
+        rs = {"each": [{"collection": "servers",
+                        "where": {"field": "transport",
+                                  "equals": "streamable-http"},
+                        "rules": {"matches": [{"field": "url",
+                                               "pattern": "^https://"}]}}]}
+        rec = {"servers": [
+            {"transport": "streamable-http", "url": "http://inseguro"},
+            {"transport": "stdio", "url": "http://no-aplica"},
+        ]}
+        v = _run(rs, rec)
+        self.assertEqual(len(v), 1, v)
+        self.assertIn("elemento 0", v[0])
+
+    def test_orden_determinista_con_matches(self):
+        rs = {"required": [{"field": "zeta"}],
+              "matches": [{"field": "alfa", "pattern": self.KEBAB}]}
+        rec = {"alfa": "NO"}
+        v1 = _run(rs, rec)
+        v2 = _run(rs, rec)
+        self.assertEqual(v1, v2)
+        campos = [x.split(":", 1)[0].strip() for x in v1]
+        self.assertEqual(campos, sorted(campos))
 
 
 class TestDeterminismoYOrden(unittest.TestCase):
