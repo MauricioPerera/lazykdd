@@ -2,6 +2,11 @@
 
 All notable changes to the KDD Template are documented here.
 
+## Unreleased
+
+**Contract 29 — Benchmark tool: the 7 gates + suite, measured and testable** ([C29-REPORT](docs/reports/CONTRACT-29-REPORT.md))
+- Formalizes an ad-hoc benchmark (run at the user's request after v1.4.0) into a versioned tool: `scripts/benchmark_gates.py` measures the 7 level-1 gates and the test suite. Central tension — a real benchmark needs subprocess + wall clock, the opposite of "deterministic, no subprocess" — resolved by dependency injection: all orchestration (repetitions, warmup discard, min/median/max, report formatting, exit code) is pure and receives `run_fn`/`timer_fn` as mandatory parameters; the frozen oracle always injects deterministic fakes and never triggers a real subprocess or depends on the clock. Only `main` (without explicit injection) constructs the real ones. Deliberately NOT a CI gate (diagnostic tool for the maintainer, not a correctness check); no numbers from any single run are fossilized in the repo's permanent docs.
+
 ## v1.4.0 — 2026-07-08
 
 Two gates earned from the metodology's own operational record: a real incident (the CHANGELOG replace that silently lost entries) and a repeated manual practice (the PM verifying perimeters by hand) — plus one imported from analyzing an external project, both converted from prose/discipline into deterministic machine checks.
