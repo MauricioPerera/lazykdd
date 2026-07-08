@@ -23,7 +23,7 @@ import rule_engine
 # Claves top-level permitidas en un rule-set
 _VALID_KEYS = {
     "_comment", "required", "type", "enums", "bounds", "refs",
-    "keyed_bounds", "keyed_enums", "code_only", "golden"
+    "keyed_bounds", "keyed_enums", "each", "code_only", "golden"
 }
 
 

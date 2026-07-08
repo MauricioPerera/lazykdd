@@ -49,6 +49,9 @@ MANIFEST = (
     "examples/rules/border-control.rules.json",
     "examples/rules/border-golden.json",
     "knowledge/data_models/border_rules.md",
+    "examples/rules/workflow-policy.rules.json",
+    "examples/rules/workflow-golden.json",
+    "knowledge/data_models/workflow_policy.md",
 )
 
 _LINK_RE = re.compile(r"\]\(([^)]+)\)")

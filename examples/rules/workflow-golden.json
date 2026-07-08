@@ -1,0 +1,83 @@
+{
+  "_comment": "Golden set congelado del dominio politica de workflows (forma n8n, fixtures sinteticos). 'violations' = campos top-level con >=1 violacion ('nodes' agrupa las reglas por nodo via each); 'code_only_miss' = lo que el declarativo no alcanza (ciclos del grafo). Dominio: knowledge/data_models/workflow_policy.md.",
+  "refs": {
+    "environments": {
+      "prod": { "max_execution_timeout": 300 },
+      "dev": { "max_execution_timeout": 900 }
+    }
+  },
+  "cases": [
+    {
+      "name": "valido",
+      "record": { "name": "sync-crm", "environment": "prod", "settings": { "error_workflow": "err-handler", "execution_timeout": 120 }, "connections": {}, "nodes": [ { "type": "webhook", "parameters": {}, "credentials_inline": false }, { "type": "httpRequest", "parameters": { "timeout": 30 }, "credentials_inline": false }, { "type": "set", "parameters": {}, "credentials_inline": false } ] },
+      "violations": [],
+      "code_only_miss": []
+    },
+    {
+      "name": "sin error_workflow",
+      "record": { "name": "w", "environment": "prod", "settings": { "error_workflow": "", "execution_timeout": 120 }, "connections": {}, "nodes": [ { "type": "code", "parameters": {}, "credentials_inline": false } ] },
+      "violations": ["settings"],
+      "code_only_miss": []
+    },
+    {
+      "name": "entorno desconocido",
+      "record": { "name": "w", "environment": "qa", "settings": { "error_workflow": "err", "execution_timeout": 120 }, "connections": {}, "nodes": [ { "type": "code", "parameters": {}, "credentials_inline": false } ] },
+      "violations": ["environment"],
+      "code_only_miss": []
+    },
+    {
+      "name": "timeout sobre el tope del entorno (400 excede prod)",
+      "record": { "name": "w", "environment": "prod", "settings": { "error_workflow": "err", "execution_timeout": 400 }, "connections": {}, "nodes": [ { "type": "code", "parameters": {}, "credentials_inline": false } ] },
+      "violations": ["settings"],
+      "code_only_miss": []
+    },
+    {
+      "name": "tope por entorno no global (400 pasa en dev)",
+      "record": { "name": "w", "environment": "dev", "settings": { "error_workflow": "err", "execution_timeout": 400 }, "connections": {}, "nodes": [ { "type": "code", "parameters": {}, "credentials_inline": false } ] },
+      "violations": [],
+      "code_only_miss": []
+    },
+    {
+      "name": "httpRequest sin timeout (each + where)",
+      "record": { "name": "w", "environment": "prod", "settings": { "error_workflow": "err", "execution_timeout": 120 }, "connections": {}, "nodes": [ { "type": "httpRequest", "parameters": {}, "credentials_inline": false } ] },
+      "violations": ["nodes"],
+      "code_only_miss": []
+    },
+    {
+      "name": "nodo code sin timeout NO viola (where filtra)",
+      "record": { "name": "w", "environment": "prod", "settings": { "error_workflow": "err", "execution_timeout": 120 }, "connections": {}, "nodes": [ { "type": "code", "parameters": {}, "credentials_inline": false } ] },
+      "violations": [],
+      "code_only_miss": []
+    },
+    {
+      "name": "credenciales inline (each sin where)",
+      "record": { "name": "w", "environment": "prod", "settings": { "error_workflow": "err", "execution_timeout": 120 }, "connections": {}, "nodes": [ { "type": "set", "parameters": {}, "credentials_inline": true } ] },
+      "violations": ["nodes"],
+      "code_only_miss": []
+    },
+    {
+      "name": "tipo de nodo no permitido",
+      "record": { "name": "w", "environment": "prod", "settings": { "error_workflow": "err", "execution_timeout": 120 }, "connections": {}, "nodes": [ { "type": "executeCommand", "parameters": {}, "credentials_inline": false } ] },
+      "violations": ["nodes"],
+      "code_only_miss": []
+    },
+    {
+      "name": "elemento no-dict en nodes",
+      "record": { "name": "w", "environment": "prod", "settings": { "error_workflow": "err", "execution_timeout": 120 }, "connections": {}, "nodes": [ 5 ] },
+      "violations": ["nodes"],
+      "code_only_miss": []
+    },
+    {
+      "name": "acumula (entorno + timeout no numerico + nodos)",
+      "record": { "name": "w", "environment": "qa", "settings": { "error_workflow": "err", "execution_timeout": "mucho" }, "connections": {}, "nodes": [ { "type": "httpRequest", "parameters": {}, "credentials_inline": true } ] },
+      "violations": ["environment", "nodes", "settings"],
+      "code_only_miss": []
+    },
+    {
+      "name": "FRONTERA ciclo del grafo (A->B->A)",
+      "record": { "name": "w", "environment": "prod", "settings": { "error_workflow": "err", "execution_timeout": 120 }, "connections": { "A": ["B"], "B": ["A"] }, "nodes": [ { "type": "code", "parameters": {}, "credentials_inline": false } ] },
+      "violations": ["connections"],
+      "code_only_miss": ["connections"]
+    }
+  ]
+}

@@ -20,6 +20,12 @@ Semantica por familia (cada una produce a lo sumo una violacion por campo):
 - keyed_bounds: max = refs[table][record[key]][max_path]; si el valor (number) > max -> violacion.
 - keyed_enums: allowed = refs[table][record[key]][values_path]; si el valor no esta -> violacion.
   Las familias keyed se saltan (sin violacion) si la clave no resuelve en la tabla.
+- each (cuantificacion sobre colecciones): {collection, where?, rules} — evalua el subset
+  interno v1 (required/type/enums/bounds, misma semantica de arriba) sobre CADA elemento
+  dict de record[collection] (lista), filtrado por where {field, equals} si esta. Toda
+  violacion se emite con el prefijo del nombre de la coleccion ("<collection>: elemento
+  <i>...": el campo top-level ES la coleccion). Coleccion ausente o no-lista -> se salta;
+  elemento no-dict -> una violacion de la coleccion nombrando el indice.
 """
 
 import os
@@ -141,6 +147,62 @@ class TestKeyed(unittest.TestCase):
         # country XX no esta en limits -> keyed no dispara (lo cubre refs sobre country)
         rec = {"country": "XX", "amount": 999999999, "currency": "EUR"}
         self.assertEqual(_fields(_run(self.RS, rec, self.REFS)), set())
+
+
+class TestEach(unittest.TestCase):
+    RS = {"each": [
+        {"collection": "nodes",
+         "where": {"field": "type", "equals": "httpRequest"},
+         "rules": {"required": [{"field": "parameters.timeout"}]}},
+        {"collection": "nodes",
+         "rules": {"enums": [{"field": "credentials_inline", "values": [False]}]}},
+    ]}
+
+    def test_where_filtra_por_tipo(self):
+        rec = {"nodes": [
+            {"type": "httpRequest", "parameters": {}, "credentials_inline": False},
+            {"type": "code", "parameters": {}, "credentials_inline": False},
+        ]}
+        v = _run(self.RS, rec)
+        # el httpRequest sin timeout viola; el code sin timeout NO (where filtra)
+        self.assertEqual(len(v), 1, v)
+        self.assertTrue(v[0].startswith("nodes"), v[0])
+        self.assertIn("timeout", v[0])
+
+    def test_regla_sin_where_aplica_a_todos(self):
+        rec = {"nodes": [
+            {"type": "code", "parameters": {}, "credentials_inline": True},
+            {"type": "set", "parameters": {}, "credentials_inline": False},
+        ]}
+        v = _run(self.RS, rec)
+        self.assertEqual(len(v), 1, v)
+        self.assertTrue(v[0].startswith("nodes"), v[0])
+
+    def test_valido_sin_violaciones(self):
+        rec = {"nodes": [
+            {"type": "httpRequest", "parameters": {"timeout": 30}, "credentials_inline": False},
+            {"type": "code", "parameters": {}, "credentials_inline": False},
+        ]}
+        self.assertEqual(_run(self.RS, rec), [])
+
+    def test_bounds_y_type_internos(self):
+        rs = {"each": [{"collection": "items",
+                        "rules": {"type": [{"field": "qty", "kind": "number"}],
+                                  "bounds": [{"field": "qty", "gt": 0}]}}]}
+        v = _run(rs, {"items": [{"qty": -1}, {"qty": "x"}, {"qty": 2}]})
+        self.assertEqual(len(v), 2, v)
+        for viol in v:
+            self.assertTrue(viol.startswith("items"), viol)
+
+    def test_coleccion_ausente_o_no_lista_se_salta(self):
+        self.assertEqual(_run(self.RS, {}), [])
+        self.assertEqual(_run(self.RS, {"nodes": "no-lista"}), [])
+        self.assertEqual(_run(self.RS, {"nodes": {"a": 1}}), [])
+
+    def test_elemento_no_dict_es_violacion_de_la_coleccion(self):
+        v = _run(self.RS, {"nodes": [5]})
+        self.assertEqual(len(v), 1, v)
+        self.assertTrue(v[0].startswith("nodes"), v[0])
 
 
 class TestDeterminismoYOrden(unittest.TestCase):

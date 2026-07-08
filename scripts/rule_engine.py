@@ -31,6 +31,68 @@ def evaluate(ruleset: dict, record: dict, refs: dict) -> list:
         """Formatea un mensaje de violación."""
         return "{}: {}".format(field, msg)
 
+    def evaluate_v1_subset(ruleset_v1, record_elem, refs):
+        """Evalua solo familias v1 (required/type/enums/bounds) sobre un elemento."""
+        elem_violations = []
+
+        # Procesar familia 'required'
+        if "required" in ruleset_v1:
+            for rule in ruleset_v1["required"]:
+                field = rule["field"]
+                value = get_value(record_elem, field)
+                if is_empty(value):
+                    elem_violations.append(format_violation(field, "required"))
+
+        # Procesar familia 'type'
+        if "type" in ruleset_v1:
+            for rule in ruleset_v1["type"]:
+                field = rule["field"]
+                kind = rule["kind"]
+                value = get_value(record_elem, field)
+
+                if value is None:
+                    continue
+
+                if kind == "number":
+                    if isinstance(value, bool) or not isinstance(value, (int, float)):
+                        elem_violations.append(format_violation(field, "type must be number"))
+                elif kind == "string":
+                    if not isinstance(value, str):
+                        elem_violations.append(format_violation(field, "type must be string"))
+                elif kind == "dict":
+                    if not isinstance(value, dict):
+                        elem_violations.append(format_violation(field, "type must be dict"))
+
+        # Procesar familia 'bounds'
+        if "bounds" in ruleset_v1:
+            for rule in ruleset_v1["bounds"]:
+                field = rule["field"]
+                value = get_value(record_elem, field)
+
+                if value is None or not isinstance(value, (int, float)) or isinstance(value, bool):
+                    continue
+
+                if "gt" in rule and value <= rule["gt"]:
+                    elem_violations.append(format_violation(field, "bounds violated"))
+                elif "min" in rule and value < rule["min"]:
+                    elem_violations.append(format_violation(field, "bounds violated"))
+                elif "max" in rule and value > rule["max"]:
+                    elem_violations.append(format_violation(field, "bounds violated"))
+                elif rule.get("integer", False) and value != int(value):
+                    elem_violations.append(format_violation(field, "bounds violated"))
+
+        # Procesar familia 'enums'
+        if "enums" in ruleset_v1:
+            for rule in ruleset_v1["enums"]:
+                field = rule["field"]
+                value = get_value(record_elem, field)
+                values = rule["values"]
+
+                if value not in values:
+                    elem_violations.append(format_violation(field, "not in enum"))
+
+        return elem_violations
+
     # Procesar familia 'required'
     if "required" in ruleset:
         for rule in ruleset["required"]:
@@ -166,6 +228,44 @@ def evaluate(ruleset: dict, record: dict, refs: dict) -> list:
 
             if value not in allowed_values:
                 violations.append(format_violation(field, "keyed enum not allowed"))
+
+    # Procesar familia 'each'
+    if "each" in ruleset:
+        for each_rule in ruleset["each"]:
+            collection = each_rule.get("collection")
+            where = each_rule.get("where")
+            rules = each_rule.get("rules", {})
+
+            # Obtener la coleccion desde el record
+            items = get_value(record, collection)
+
+            # Si no existe o no es lista, se salta
+            if not isinstance(items, list):
+                continue
+
+            # Procesar cada elemento de la coleccion
+            for idx, item in enumerate(items):
+                # Si hay filtro where, verificar que el elemento lo cumpla
+                # Si no cumple, esta rule no se aplica a este elemento
+                if where:
+                    where_field = where.get("field")
+                    where_value = where.get("equals")
+                    item_where_value = get_value(item, where_field)
+                    if item_where_value != where_value:
+                        continue
+
+                # La rule se aplica a este elemento. Si no es dict, es violacion
+                if not isinstance(item, dict):
+                    violations.append(format_violation(collection, "element at index {} is not a dict".format(idx)))
+                    continue
+
+                # Evaluar el subset v1 de reglas sobre este elemento
+                elem_violations = evaluate_v1_subset(rules, item, refs)
+
+                # Prefixar cada violacion con "collection: elemento <idx>."
+                for elem_viol in elem_violations:
+                    prefixed = "{}: elemento {}: {}".format(collection, idx, elem_viol)
+                    violations.append(prefixed)
 
     # Ordenar deterministamente por campo (parte antes del ':')
     violations.sort(key=lambda v: v.split(":", 1)[0].strip())

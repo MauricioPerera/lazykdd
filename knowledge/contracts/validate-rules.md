@@ -13,7 +13,7 @@ budget:
   max_cyclomatic_complexity: 10
   max_nesting_depth: 4
 tests: "tests/test_rule_engine.py"
-tests_sha256: "ecd4f82f8ac5bd5112ac3d60040e650d7215760fe2fefc42ad1bf40612f20124"
+tests_sha256: "bb5e2dbef425268691b7af7af58db95846db5f0311658be18c2e0e5347ac904a"
 deps_allowed: []
 forbids: ['network', 'subprocess']
 ---
@@ -40,6 +40,12 @@ def evaluate(ruleset: dict, record: dict, refs: dict) -> list:
   (gt/min/max/integer; solo sobre numbers), `enums` (igualdad de valor, `in`), `refs`
   (el valor debe ser clave en `refs[collection]`), `keyed_bounds` y `keyed_enums` (el
   tope/conjunto se busca en `refs[table][record[key]]`; se saltan si la clave no resuelve).
+- `each` ({collection, where?, rules}): cuantificacion sobre colecciones — el subset
+  interno v1 (required/type/enums/bounds, misma semantica) se evalua sobre cada elemento
+  dict de la lista `record[collection]`, filtrado por `where` {field, equals}; toda
+  violacion lleva el prefijo del nombre de la coleccion (el campo top-level ES la
+  coleccion); coleccion ausente o no-lista se salta; elemento no-dict = violacion de la
+  coleccion nombrando el indice.
 - Campos punteados (`beneficiary.account`) navegan dicts anidados; un intermedio no-dict se
   trata como ausente.
 - Orden estable de violaciones (por campo); nunca lanza ante record/ruleset con tipos
