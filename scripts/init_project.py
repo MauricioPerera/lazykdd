@@ -43,6 +43,9 @@ MANIFEST = (
     "tests/test_payment_limit.py",
     "knowledge/data_models/payment_limits.md",
     "knowledge/contracts/validate-payment-limit.md",
+    "examples/rules/payment-compliance.rules.json",
+    "examples/rules/payment-golden.json",
+    "tests/test_payment_rules_equivalence.py",
 )
 
 _LINK_RE = re.compile(r"\]\(([^)]+)\)")

@@ -1,0 +1,78 @@
+{
+  "_comment": "Golden set congelado de pagos ya decididos. 'violations' = campos con >=1 violacion (ground-truth, verificado contra src/payment_limit.py de C16). 'code_only_miss' = campos que el checker declarativo NO alcanza para ESE record (por la regla code_only del rule-set); el declarativo debe reproducir violations - code_only_miss.",
+  "refs": {
+    "limits": {
+      "AR": { "max_amount": 500000, "allowed_currencies": ["USD", "ARS"] },
+      "BR": { "max_amount": 300000, "allowed_currencies": ["USD", "BRL"] },
+      "US": { "max_amount": 1000000, "allowed_currencies": ["USD"] }
+    }
+  },
+  "cases": [
+    {
+      "name": "valido",
+      "record": { "amount": 1000, "currency": "USD", "country": "AR", "beneficiary": { "verified": true, "account": "AR-1" } },
+      "violations": [],
+      "code_only_miss": []
+    },
+    {
+      "name": "tope exacto valido",
+      "record": { "amount": 500000, "currency": "USD", "country": "AR", "beneficiary": { "verified": true, "account": "AR-1" } },
+      "violations": [],
+      "code_only_miss": []
+    },
+    {
+      "name": "pais desconocido",
+      "record": { "amount": 1000, "currency": "USD", "country": "XX", "beneficiary": { "verified": true, "account": "AR-1" } },
+      "violations": ["country"],
+      "code_only_miss": []
+    },
+    {
+      "name": "monto sobre el tope del pais",
+      "record": { "amount": 500001, "currency": "USD", "country": "AR", "beneficiary": { "verified": true, "account": "AR-1" } },
+      "violations": ["amount"],
+      "code_only_miss": []
+    },
+    {
+      "name": "tope por pais no global (400k excede BR)",
+      "record": { "amount": 400000, "currency": "BRL", "country": "BR", "beneficiary": { "verified": true, "account": "BR-1" } },
+      "violations": ["amount"],
+      "code_only_miss": []
+    },
+    {
+      "name": "divisa no permitida para el pais",
+      "record": { "amount": 1000, "currency": "EUR", "country": "AR", "beneficiary": { "verified": true, "account": "AR-1" } },
+      "violations": ["currency"],
+      "code_only_miss": []
+    },
+    {
+      "name": "beneficiario no verificado (False)",
+      "record": { "amount": 1000, "currency": "USD", "country": "AR", "beneficiary": { "verified": false, "account": "AR-1" } },
+      "violations": ["beneficiary"],
+      "code_only_miss": []
+    },
+    {
+      "name": "beneficiario sin cuenta",
+      "record": { "amount": 1000, "currency": "USD", "country": "AR", "beneficiary": { "verified": true, "account": "" } },
+      "violations": ["beneficiary"],
+      "code_only_miss": []
+    },
+    {
+      "name": "verified truthy no True (1) - FRONTERA code_only",
+      "record": { "amount": 1000, "currency": "USD", "country": "AR", "beneficiary": { "verified": 1, "account": "AR-1" } },
+      "violations": ["beneficiary"],
+      "code_only_miss": ["beneficiary"]
+    },
+    {
+      "name": "monto no numerico",
+      "record": { "amount": "mil", "currency": "USD", "country": "AR", "beneficiary": { "verified": true, "account": "AR-1" } },
+      "violations": ["amount"],
+      "code_only_miss": []
+    },
+    {
+      "name": "acumula 3 (pais + monto + beneficiario)",
+      "record": { "amount": -5, "currency": "USD", "country": "ZZ", "beneficiary": { "verified": false, "account": "" } },
+      "violations": ["amount", "beneficiary", "country"],
+      "code_only_miss": []
+    }
+  ]
+}

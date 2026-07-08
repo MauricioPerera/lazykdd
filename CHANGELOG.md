@@ -4,6 +4,9 @@ All notable changes to the KDD Template are documented here.
 
 ## Unreleased
 
+**Contract 17 — Rule contract: business rules as declarative data** ([C17-REPORT](docs/reports/CONTRACT-17-REPORT.md))
+- New vertiente (lineage: `game-protocol` profiles): a deterministic rule engine (`scripts/rule_engine.py`) that validates business rules expressed as declarative DATA (`required/type/enums/bounds/refs/keyed_*`), no LLM. Falsifiable experiment on the payment domain: the declarative rule-set reproduces the C16 code validator's verdicts over a frozen golden set, with exactly one documented `code_only` boundary (exact-`True` KYC, since Python value-equality treats `1 == True`). Engine + format node are infra; the payment rule-set/golden are EXAMPLE artifacts.
+
 **Contract 16 — Example domain: per-country payment validation** ([C16-REPORT](docs/reports/CONTRACT-16-REPORT.md))
 - Resolved example of financial-domain frozen contracts: `validate_payment_limit` (per-country limit + beneficiary verification) as a pure function, with its frozen oracle and a data-model node holding the compliance rules. Added as an EXAMPLE artifact (removed by `init_project` on instantiation), so the template stays domain-neutral.
 
