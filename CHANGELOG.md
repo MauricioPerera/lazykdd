@@ -2,7 +2,9 @@
 
 All notable changes to the KDD Template are documented here.
 
-## Unreleased
+## v1.3.0 — 2026-07-08
+
+Contracts turn to the agent ecosystem itself: an editorial domain beyond "logic", the first gate custodying REAL repo assets (agent skills), the MCP-server registry with the evidence-earned `matches` family, and the agent–skills–MCP wiring closing the triangle — with the honest boundary map extended to five measured classes.
 
 **Contract 26 — Agent wiring: the agent–skills–MCP triangle as a contract** ([C26-REPORT](docs/reports/CONTRACT-26-REPORT.md))
 - Eighth rule-contract domain, answering "can an agent itself be contracted?" in three honest layers: agent-definition files (RECON found ZERO real ones — that gate is deliberately NOT built, evidence-first), the WIRING (this domain: which agent uses which skills/MCP servers, model tier enum, the real max-2-redelegations policy as `bounds`), and behavior (not deterministically contractable — that's CCDD's thesis: contract the artifact, not the agent). New boundary class measured: referential integrity under quantification (`refs`-inside-`each`, first appearance ⇒ no new family) — declared `code_only` and closed by code (`check_agent_wiring`, C22 precedent), de-facto chaining this domain to the C24 skills gate and C25 MCP registry.
