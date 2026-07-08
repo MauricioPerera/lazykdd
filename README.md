@@ -6,6 +6,8 @@
 
 ## English
 
+🌐 **[Landing page](https://mauricioperera.github.io/KDD/)** — a visual walkthrough of the methodology (EN/ES toggle).
+
 This is a template repository for projects that implement the **Knowledge-Driven Development (KDD)** methodology, which unifies:
 - **OKF (Open Knowledge Format):** A minimalist format for structuring knowledge, design, and architecture as markdown files with YAML frontmatter. The normative spec for OKF nodes lives in [`knowledge/OKF-SPEC.md`](knowledge/OKF-SPEC.md).
 - **CCDD (Contract-Driven Development):** A methodology for governing development with ephemeral AI agents through strict contracts and deterministic thresholds (complexity, frozen tests).
@@ -56,6 +58,8 @@ The template uses **semantic versioning** starting from `v1.0.0`. See [`CHANGELO
 <a id="español"></a>
 
 ## Español
+
+🌐 **[Landing page](https://mauricioperera.github.io/KDD/)** — un recorrido visual de la metodología (toggle EN/ES).
 
 Este repositorio plantilla es para proyectos que implementan la metodología **Knowledge-Driven Development (KDD)**, la cual unifica:
 - **OKF (Open Knowledge Format):** Un formato minimalista para estructurar el conocimiento, diseño y arquitectura como archivos markdown con frontmatter YAML. La spec normativa de los nodos OKF está en [`knowledge/OKF-SPEC.md`](knowledge/OKF-SPEC.md).
