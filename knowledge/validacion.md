@@ -32,7 +32,7 @@ Si el agente dispone del servidor MCP `ccdd-complexity`, el gate CCDD real se in
 ### Gate multi-lenguaje
 
 - **Python** tiene un parser de firma nativo completo (validado estrictamente); es el único lenguaje con parsing de firma completo.
-- **Otros lenguajes soportados** — JavaScript entre ellos, con cobertura de `measure_complexity` que además incluye TS/TSX/Rust/Go/Java/C#/PHP a la fecha (la lista no es exhaustiva ni fija; consulta el gate real para la lista vigente) — enrutan a un backend tree-sitter que aplica el mismo budget de complejidad (cyclomatic/nesting/params) que Python.
+- **Otros lenguajes soportados** — JavaScript entre ellos, con cobertura de `measure_complexity` que además incluye TS/TSX/JS/Rust/Go/Java/C#/PHP/Ruby/Kotlin/C/Swift/C++ a la fecha (13 backends tree-sitter + Python nativo; la lista no es exhaustiva ni fija: consulta el gate real para la lista vigente) — enrutan a un backend tree-sitter que aplica el mismo budget de complejidad (cyclomatic/nesting/params) que Python.
 - El `test_command` declarado en el contrato se corre **verbatim** (el gate ejecuta el comando declarado, con `cwd` = directorio del target). Los tests deben ser auto-ejecutables por ese comando; para JavaScript esto implica ESM (`.mjs` o `"type": "module"` en `package.json`) con un `test_command` como `"node --test <ruta>"`.
 - Con `language` distinto de python, la `signature` se valida por **aridad genérica** (cantidad de parámetros), no con un parser nativo de ese lenguaje.
 - `scan_dependencies` razona en clave Python (imports/stdlib) y NO debe usarse como parte del gate para lenguajes no-Python.

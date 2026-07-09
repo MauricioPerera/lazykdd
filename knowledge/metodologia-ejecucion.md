@@ -10,7 +10,8 @@ tags: ['metodologia', 'ccdd', 'proceso', 'ejecucion']
 Capa de nivel **proyecto** que complementa los task contracts de
 [Contratos de Desarrollo](./contracts/): agrupa tareas en **contratos de ejecución**
 numerados, cada uno con criterios de aceptación verificables por máquina. Probada en
-producción (28 contratos consecutivos en el proyecto origen).
+producción antes de formalizarse en esta plantilla (28 contratos consecutivos en el
+proyecto donde nació la metodología — cifra de ese momento, no un conteo vivo de este repo).
 
 ## Capas
 
