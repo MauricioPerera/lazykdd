@@ -49,5 +49,16 @@ jobs:
       - name: Run unit tests (2/2)
         run: python -m unittest discover -s tests -p "test_*.py"
 
+      - name: Run project test suite
+        # This step is separate from the two above on purpose: those validate the KDD
+        # tooling itself (scripts/*.py) and stay Python forever, regardless of your
+        # project's language. THIS step is a placeholder for YOUR project's own tests.
+        # Swap the command below for your language's runner (e.g. `npm test`,
+        # `cargo test`, `go test ./...`) once your project has its own tests; add
+        # `actions/setup-node`/`actions/setup-go`/etc. above if your runtime needs setup.
+        # Left as the same Python command by default so a clean fork of the template
+        # stays green without editing anything.
+        run: python -m unittest discover -s tests -p "test_*.py"
+
       - name: Assemble context (smoke)
         run: python scripts/assemble_context.py ccdd/context.json "smoke"
