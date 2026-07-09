@@ -1,11 +1,11 @@
 ---
 type: 'Task Contract'
 title: 'Herramienta de benchmark de gates y suite'
-description: 'Mide los 7 gates de nivel 1 y la suite de tests con logica de orquestacion pura (min/mediana/max, formato, exit code) resuelta por inyeccion de run_fn/timer_fn; solo el CLI real usa subprocess/reloj de pared. Diagnostico de mantenimiento, no gate de CI.'
+description: 'Mide los 8 gates de nivel 1 y la suite de tests con logica de orquestacion pura (min/mediana/max, formato, exit code) resuelta por inyeccion de run_fn/timer_fn; solo el CLI real usa subprocess/reloj de pared. Diagnostico de mantenimiento, no gate de CI.'
 tags: ['ccdd', 'benchmark', 'mantenimiento', 'infra']
 
 task: benchmark-gates
-intent: "Medir el tiempo de los 7 gates de nivel 1 y la suite, con orquestacion pura y testeable por inyeccion de dependencias."
+intent: "Medir el tiempo de los 8 gates de nivel 1 y la suite, con orquestacion pura y testeable por inyeccion de dependencias."
 target: scripts/benchmark_gates.py
 signature: "def benchmark_gates(gates, suite_cmd, repo_root, run_fn, timer_fn, reps=3, warmup=1, suite_passes=2) -> dict"
 test_command: "python -m unittest tests/test_benchmark_gates.py"
@@ -13,7 +13,7 @@ budget:
   max_cyclomatic_complexity: 10
   max_nesting_depth: 4
 tests: "tests/test_benchmark_gates.py"
-tests_sha256: "38ae21bce0b6edf9d6465e1d4fd2d93483e280e30f67db57d03c49ea48318606"
+tests_sha256: "dc6fbb947cbb7f7422fc991cc63b8aaf81cede3b9d120fee6c5365c71d43da28"
 touch_only: ['scripts/benchmark_gates.py']
 deps_allowed: []
 forbids: ['network', 'llm']
@@ -23,7 +23,7 @@ forbids: ['network', 'llm']
 
 ## Intent
 Formalizar como activo versionado el benchmark ad-hoc corrido a pedido del
-usuario: medir los 7 gates de nivel 1 + la suite, con la orquestación (conteo
+usuario: medir los 8 gates de nivel 1 + la suite, con la orquestación (conteo
 de reps, descarte de warmup, min/mediana/max, formato del reporte, exit code)
 implementada como funciones PURAS testeables por inyección de dependencias —
 nunca fosiliza números de una corrida particular en la documentación del repo.
