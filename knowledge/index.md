@@ -10,6 +10,7 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
 - [Upgrade de la plantilla](./plantilla-upgrade.md) — qué es infraestructura sobreescribible desde upstream vs. propiedad del proyecto; procedimiento manual de upgrade.
 - [Rule contract](./rule-contract-spec.md) — vertiente que valida reglas de negocio como datos declarativos (no solo código); familias, golden set y frontera dato/lógica.
 - [Puente GAME Protocol](./game-data-bridge.md) — receta canónica para poner datos de juego (gameplay as data) bajo contratos KDD: toolchain vendoreado, perfil propio, oráculo sellado con lint/export/no-drift.
+- [Diagram contract](./diagram-contract-spec.md) — convención para referenciar diagramas Mermaid verificables desde un concept doc OKF; formato del `.diagram-contract.json`; alcance (solo flowchart) y relación con el proyecto hermano `mermaid-gate`.
 
 ## Estructura
 - [Contratos de Desarrollo](./contracts/)
@@ -28,6 +29,7 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
   - [Herramienta de benchmark de gates y suite](./contracts/benchmark-gates.md)
   - [Gate de UX/accesibilidad de páginas HTML](./contracts/ux-page-gate.md)
   - [Gate de formato de mensaje de commit](./contracts/commit-message-gate.md)
+  - [Gate de diagramas Mermaid (flowchart, Python puro)](./contracts/diagram-gate.md)
   - [Validador OKF de la base de conocimiento](./contracts/validate-okf.md)
   - [Validador de contratos de ejecución (specs)](./contracts/validate-specs.md)
   - [Lint ASCII de literales en scripts](./contracts/lint-ascii.md)

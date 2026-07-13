@@ -1,0 +1,14 @@
+{
+  "diagram_type": "flowchart",
+  "min_nodes": 3,
+  "max_nodes": 8,
+  "required_nodes": [
+    { "id": "A", "label": "Inicio" },
+    { "id": "B" }
+  ],
+  "required_edges": [
+    { "from": "A", "to": "B" },
+    { "from": "B", "to": "C", "label": "Si" },
+    { "from": "B", "to": "D", "label": "No" }
+  ]
+}

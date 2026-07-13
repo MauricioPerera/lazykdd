@@ -2,6 +2,12 @@
 
 All notable changes to the KDD Template are documented here.
 
+## Unreleased
+
+**Diagram gate: flowchart Mermaid diagrams, verified without breaking `forbids`**
+- New optional level-1 gate `scripts/validate_diagrams.py`: a from-scratch, pure-Python (regex-based) parser for the `flowchart`/`graph` subset of Mermaid syntax, checked against a declarative `.diagram-contract.json` sitting next to each `.mmd` (required nodes, required edges, node count bounds). Built specifically to respect this repo's `forbids: ['network', 'subprocess', 'llm']` on level-1 gates: the real mermaid parser lives in Node.js and would need `subprocess` to invoke, so this gate deliberately reimplements only the flowchart subset instead. Convention documented in `knowledge/diagram-contract-spec.md`; scope is explicitly partial (flowchart only, no subgraphs/styles/multi-line edges) — the sibling project `mermaid-gate` (Node.js, the real mermaid parser, 20 diagram types, plus an optional LLM-judge layer for semantic checks) is referenced as the tool of choice when full fidelity or another diagram type is needed, the same way the real CCDD gate is level-2/optional rather than baked into level 1.
+- Process note: implemented directly in a single session (not through the delegated PM/dev pipeline in `knowledge/metodologia-ejecucion.md`), so it isn't numbered as a `Contract NN` and has no `docs/reports/` entry — `knowledge/contracts/diagram-gate.md` is still a fully valid, sealed task contract (`tests_sha256` frozen against `tests/test_validate_diagrams.py`, 18 tests) and passes `validate_contracts`/`validate_okf` cleanly. Not wired into `scripts/benchmark_gates.py`'s sealed 8-gate list or `.github/workflows/validate.yml` — that would touch contract-governed frozen infrastructure (`tests/test_benchmark_gates.py`) and is left as a deliberate follow-up decision rather than a silent change.
+
 ## v1.5.0 — 2026-07-08
 
 A benchmark tool for the template's own health, and two gates that measure a mechanical/judgment boundary outside code for the first time — a web page (C30) and a git commit message (C31) — both designed by reading a real, widely-adopted third party before building, not by inventing rules from scratch.
