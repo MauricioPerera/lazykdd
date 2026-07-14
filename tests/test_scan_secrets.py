@@ -32,7 +32,7 @@ de 64 hex chars que ya viven en ``knowledge/contracts/*.md`` en este repo).
       (nombre empieza con ``.``) y ``__pycache__``/``node_modules``.
       Ordenado por (file, line implicito en msg).
     ``main(argv) -> int`` — ``argv[1:]`` son uno o mas directorios (default
-      ``['src', 'tests']`` si no se pasa ninguno). Imprime cada finding
+      ``['src']`` si no se pasa ninguno). Imprime cada finding
       (``str``: ``"ERROR [<rule>] <file>: <msg>"``) y devuelve 0 si no hay
       findings, 1 si hay >=1.
 
@@ -202,9 +202,12 @@ class TestMain(unittest.TestCase):
         code = ss.main(['prog', src])
         self.assertEqual(code, 1)
 
-    def test_no_args_defaults_to_src_and_tests(self):
-        # Sin argumentos, default ('src', 'tests') relativos al cwd; ambos
-        # ausentes en un tmpdir vacio -> sin findings -> exit 0.
+    def test_no_args_defaults_to_src(self):
+        # Sin argumentos, default ('src',) relativo al cwd; ausente en un
+        # tmpdir vacio -> sin findings -> exit 0. (El default ya no incluye
+        # 'tests' precisamente porque este oraculo se hereda en todo
+        # proyecto instanciado del template y contiene sus propios fixtures
+        # con la FORMA de credenciales -> seria un falso positivo.)
         cwd = os.getcwd()
         os.chdir(self.tmp)
         try:

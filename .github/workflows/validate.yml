@@ -70,9 +70,9 @@ jobs:
         # Swap the command below for your language's runner (e.g. `npm test`,
         # `cargo test`, `go test ./...`) once your project has its own tests; add
         # `actions/setup-node`/`actions/setup-go`/etc. above if your runtime needs setup.
-        # Left as the same Python command by default so a clean fork of the template
-        # stays green without editing anything.
-        run: python -m unittest discover -s tests -p "test_*.py"
+        # Left as a no-op echo by default so a clean fork of the template stays green
+        # without editing anything and the Python suite is not run a third time.
+        run: echo "No project-specific test runner configured yet. Replace this step's command with your language's test runner (e.g. npm test, cargo test, go test ./...) once your project has its own tests."
 
       - name: Assemble context (smoke)
         run: python scripts/assemble_context.py ccdd/context.json "smoke"

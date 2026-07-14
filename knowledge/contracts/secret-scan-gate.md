@@ -1,7 +1,7 @@
 ---
 type: 'Task Contract'
 title: 'Gate de secretos filtrados en codigo generado (Nivel 1)'
-description: 'Escaneo determinista (regex stdlib, sin red/subprocess/LLM) de src/ y tests/ (extensible a otros directorios) buscando prefijos de credenciales conocidas (AWS, GitHub, Slack, Google, Stripe) y bloques de private key. NO deteccion de alta entropia generica, para no generar falsos positivos masivos contra los tests_sha256 de 64 hex chars que ya viven en knowledge/contracts/*.md de este mismo repo.'
+description: 'Escaneo determinista (regex stdlib, sin red/subprocess/LLM) de src/ (extensible a otros directorios) buscando prefijos de credenciales conocidas (AWS, GitHub, Slack, Google, Stripe) y bloques de private key. NO deteccion de alta entropia generica, para no generar falsos positivos masivos contra los tests_sha256 de 64 hex chars que ya viven en knowledge/contracts/*.md de este mismo repo.'
 tags: ['ccdd', 'gate', 'infra', 'seguridad']
 
 task: secret-scan-gate
@@ -13,7 +13,7 @@ budget:
   max_cyclomatic_complexity: 12
   max_nesting_depth: 3
 tests: "tests/test_scan_secrets.py"
-tests_sha256: "be40373afe386c6c0b9530535eb41e7425cd0a2d5245ac3174be1af0b981726d"
+tests_sha256: "80f2f34e67ada579b5f3a2fe023bf34b1f0ba19e1044945085f2a10174dd3dc7"
 touch_only: ['scripts/scan_secrets.py']
 deps_allowed: []
 forbids: ['network', 'subprocess', 'llm']
@@ -53,7 +53,7 @@ confiables.
   directorios ocultos (`.git`, etc.), `__pycache__` y `node_modules`.
   Directorio inexistente -> `[]` (no es error del gate).
 - `main(argv) -> int` — `argv[1:]` son directorios a escanear (default
-  `['src', 'tests']`). Imprime cada finding y devuelve 0/1.
+  `['src']`). Imprime cada finding y devuelve 0/1.
 
 ## Invariants
 - `scan_text` nunca falla con una excepcion sobre texto arbitrario
@@ -82,19 +82,23 @@ confiables.
 - DON'T: usar deteccion de alta entropia generica (falsos positivos
   masivos contra los hashes legitimos de este repo).
 - DON'T: escanear `knowledge/contracts/` por default (ahi viven los
-  `tests_sha256` legitimos); el default es `src` + `tests`, extensible
-  por argumento si un proyecto instanciado quiere escanear otros dirs.
+  `tests_sha256` legitimos); el default es solo `src`, extensible por
+  argumento si un proyecto instanciado quiere escanear otros dirs.
 
-## Nota: por que el CI de ESTE repo solo escanea `src/`
-El default del script (`['src', 'tests']`) es correcto para un proyecto
-instanciado, pero en el repo KDD mismo `tests/test_scan_secrets.py` (el
-oraculo de ESTE gate) contiene fixtures con la FORMA exacta de los
-patrones (`AKIAABCDEFGHIJKLMNOP`, bloques `-----BEGIN...PRIVATE KEY-----`,
-etc.) — el gate se detecta a si mismo como "leak" si escanea `tests/`.
-Por eso el step de CI de este repo invoca
-`python scripts/scan_secrets.py src` explicitamente (no el default de dos
-directorios). Un proyecto instanciado sin este caso de auto-referencia
-puede usar el default `src tests` sin problema.
+## Nota: por que el default es solo `src/` (y el CI de ESTE repo tambien)
+El default del script es solo `['src']` precisamente por el caso de
+auto-referencia: `tests/test_scan_secrets.py` (el oraculo de ESTE gate)
+contiene fixtures con la FORMA exacta de los patrones
+(`AKIAABCDEFGHIJKLMNOP`, bloques `-----BEGIN...PRIVATE KEY-----`, etc.) y
+se hereda en TODO proyecto instanciado del template (no esta en el
+MANIFEST de `scripts/init_project.py`), asi que escanear `tests/` por
+default dispararia el gate contra sus propios fixtures como falsos
+positivos en cualquier proyecto recien instanciado. El step de CI de
+este repo invoca `python scripts/scan_secrets.py src` explicitamente por
+el mismo motivo (aunque el default ya coincide). Un proyecto
+instanciado que quiera escanear mas directorios los pasa como
+argumento: el default se mantuvo deliberadamente estrecho para que la
+primera corrida sin argumentos no se auto-detecte.
 
 ## Tests
 (Los tests estan en `tests/test_scan_secrets.py`, oraculo congelado con
@@ -114,5 +118,5 @@ real, solo cadenas con la FORMA correcta del patron.)
 
 ## Criterios de aceptacion
 - [ ] `python -m unittest tests/test_scan_secrets.py` sale en 0.
-- [ ] `python scripts/scan_secrets.py src tests` corrido sobre el repo
+- [ ] `python scripts/scan_secrets.py src` corrido sobre el repo
       real (sin secretos reales) devuelve exit 0.

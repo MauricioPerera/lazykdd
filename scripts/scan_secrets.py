@@ -82,12 +82,12 @@ def scan_directory(directory, extensions=('.py', '.js', '.ts', '.md', '.json')):
 
 
 def main(argv):
-    """argv[1:] son directorios a escanear (default ['src', 'tests']).
+    """argv[1:] son directorios a escanear (default ['src']).
 
     Imprime cada finding como ``"ERROR [<rule>] <file>: <msg>"`` y devuelve 0
     si no hay findings, 1 si hay >=1.
     """
-    dirs = argv[1:] if len(argv) > 1 else ['src', 'tests']
+    dirs = argv[1:] if len(argv) > 1 else ['src']
     findings = []
     for d in dirs:
         findings.extend(scan_directory(d))
