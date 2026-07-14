@@ -7,6 +7,7 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
 - [Quickstart](./quickstart.md) — tutorial paso a paso y ejecutable: de clonar la plantilla a tu primer task contract propio en verde.
 - [Glosario](./glosario.md) — indice unico de los ~20 terminos propios de OKF+CCDD, con link al nodo normativo de cada uno.
 - [Guia humana de supervision](./supervision-humana.md) — checklist para quien revisa un PR producido con KDD sin haber leido todo el proceso interno.
+- [MCP server propio](./mcp-server.md) — como instalar y registrar los gates de KDD como tools MCP (opt-in, no Nivel 1).
 - [Especificación OKF](./OKF-SPEC.md) — spec normativa de nodos OKF.
 - [Metodología de ejecución por contratos](./metodologia-ejecucion.md) — proceso operativo de nivel proyecto (specs/, docs/reports/, delegación y verificación).
 - [Validación de contratos](./validacion.md) — nodo canónico: niveles 1 y 2, gate multi-lenguaje, export, precedencia del budget y ciclo de vida.
@@ -39,6 +40,7 @@ Bienvenido a la base de conocimiento del proyecto. El formato de los nodos está
   - [Gate de secretos filtrados en codigo generado (Nivel 1)](./contracts/secret-scan-gate.md)
   - [Ejemplo multi-lenguaje: greet en Node.js](./contracts/example-node-greet.md)
   - [Gate de atestacion de reportes locales](./contracts/attestation-gate.md)
+  - [Capa de despacho del MCP server de gates KDD](./contracts/mcp-gate-dispatch.md)
   - [Validador OKF de la base de conocimiento](./contracts/validate-okf.md)
   - [Validador de contratos de ejecución (specs)](./contracts/validate-specs.md)
   - [Lint ASCII de literales en scripts](./contracts/lint-ascii.md)
