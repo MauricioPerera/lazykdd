@@ -1,4 +1,4 @@
-# KDD Template (Knowledge-Driven Development)
+# lazykdd
 
 [![validate-contracts](https://github.com/MauricioPerera/KDD/actions/workflows/validate.yml/badge.svg)](https://github.com/MauricioPerera/KDD/actions/workflows/validate.yml)
 
