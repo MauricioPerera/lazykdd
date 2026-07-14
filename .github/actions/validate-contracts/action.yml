@@ -1,0 +1,127 @@
+name: validate-contracts
+description: |
+  Run the KDD contract gates against a CALLER repo that did NOT clone this
+  template (no vendored `scripts/`). It checks out THIS repo
+  (MauricioPerera/KDD) at a pinned ref into `_kdd/` and runs the validators
+  against the caller's own paths.
+
+  IMPORTANT — caller responsibility: this composite action does NOT checkout
+  the caller's repo. The caller is expected to `actions/checkout@v4` its OWN
+  repo (so its working tree is at `github.workspace`) BEFORE invoking this
+  action. All path inputs below are interpreted relative to that caller
+  checkout (`github.workspace`). This action only adds the KDD tooling repo on
+  top, at `_kdd/`, without overwriting the caller's files.
+
+  Optional gates (rules / skills / ux-page / diagrams / secrets) auto-skip
+  with INFO / exit 0 when their target dir does not exist (documented as the
+  "capa opcional" in knowledge/validacion.md). `validate_specs.py` does NOT
+  auto-skip (it ERRORs on a missing dir), so this action guards it with an
+  `if [ -d ... ]` so a caller without `specs/` stays green. `validate_contracts`
+  and `validate_okf` are logically REQUIRED: if their dir is missing the gate
+  fails for real, which is correct — it means the caller has no KDD contracts
+  to validate.
+
+  Not included here (intentional): `lint_ascii.py` (audits KDD's own scripts/,
+  not a caller's), the KDD unit-test suite, and `assemble_context.py` (Nivel 2
+  smoke specific to KDD).
+
+# Only EN documentation added for this distributable (per ITEM4 instructions).
+
+inputs:
+  kdd-ref:
+    description: 'Ref of MauricioPerera/KDD to check out for the tooling scripts.'
+    required: false
+    default: 'main'
+  contracts-dir:
+    description: 'Path (relative to the caller checkout) to the KDD contracts dir. Logically REQUIRED.'
+    required: false
+    default: 'knowledge/contracts'
+  okf-dir:
+    description: 'Path to the OKF (knowledge) root. Logically REQUIRED.'
+    required: false
+    default: 'knowledge'
+  specs-dir:
+    description: 'Path to the specs dir. OPTIONAL — auto-skipped if absent.'
+    required: false
+    default: 'specs'
+  rules-dir:
+    description: 'Path to the rule-contracts dir. OPTIONAL — auto-skips (INFO) if absent.'
+    required: false
+    default: 'examples/rules'
+  skills-dirs:
+    description: 'Space-separated skill dirs (validate_skills.py accepts multiple). OPTIONAL.'
+    required: false
+    default: 'skills .agents/skills'
+  ux-page-dir:
+    description: 'Path to the UX/accessibility HTML dir. OPTIONAL — auto-skips (INFO) if absent.'
+    required: false
+    default: 'examples/ux-page'
+  diagrams-dir:
+    description: 'Path to the Mermaid diagrams dir. OPTIONAL — auto-skips (INFO) if absent.'
+    required: false
+    default: 'examples/diagrams'
+  src-dir:
+    description: 'Path to scan for leaked secrets. OPTIONAL — scan_secrets returns [] on a missing dir.'
+    required: false
+    default: 'src'
+  run-test-commands:
+    description: "If 'true', also run validate_test_commands.py against the caller's contracts dir (repo_root = caller workspace '.')."
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Check out KDD tooling repo
+      uses: actions/checkout@v4
+      with:
+        repository: MauricioPerera/KDD
+        ref: ${{ inputs.kdd-ref }}
+        path: _kdd
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Validate contracts (REQUIRED)
+      shell: bash
+      run: python _kdd/scripts/validate_contracts.py "${{ inputs.contracts-dir }}"
+
+    - name: Validate OKF nodes (REQUIRED)
+      shell: bash
+      run: python _kdd/scripts/validate_okf.py "${{ inputs.okf-dir }}"
+
+    - name: Validate specs contracts (OPTIONAL — guarded)
+      shell: bash
+      run: |
+        if [ -d "${{ inputs.specs-dir }}" ]; then
+          python _kdd/scripts/validate_specs.py "${{ inputs.specs-dir }}"
+        else
+          echo "skip: no specs dir at ${{ inputs.specs-dir }}"
+        fi
+
+    - name: Validate rule contracts (OPTIONAL — auto-skip)
+      shell: bash
+      run: python _kdd/scripts/validate_rules.py "${{ inputs.rules-dir }}"
+
+    - name: Validate agent skills (OPTIONAL — auto-skip)
+      shell: bash
+      run: python _kdd/scripts/validate_skills.py ${{ inputs.skills-dirs }}
+
+    - name: Validate UX/accessibility (OPTIONAL — auto-skip)
+      shell: bash
+      run: python _kdd/scripts/validate_ux_page.py "${{ inputs.ux-page-dir }}"
+
+    - name: Validate Mermaid diagrams (OPTIONAL — auto-skip)
+      shell: bash
+      run: python _kdd/scripts/validate_diagrams.py "${{ inputs.diagrams-dir }}"
+
+    - name: Scan for leaked secrets (OPTIONAL — auto-skip)
+      shell: bash
+      run: python _kdd/scripts/scan_secrets.py "${{ inputs.src-dir }}"
+
+    - name: Run each contract's test_command (OPTIONAL — gated by run-test-commands)
+      if: ${{ inputs.run-test-commands == 'true' }}
+      shell: bash
+      run: python _kdd/scripts/validate_test_commands.py "${{ inputs.contracts-dir }}" .

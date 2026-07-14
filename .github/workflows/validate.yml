@@ -4,6 +4,42 @@ on:
   push:
     branches: [main]
   pull_request:
+  # MODO 1 — Reusable workflow. When another repo calls this via `uses:`,
+  # the `inputs.*` context below is populated (defaults apply too). When THIS
+  # file fires on its native push/pull_request triggers, `inputs.*` is EMPTY,
+  # so every run: that references an input falls back to the literal default
+  # embedded in the `${{ inputs.X || 'literal' }}` expression. That literal
+  # MUST match the value that was hardcoded here before this trigger existed
+  # (see ITEM4-REPORT.md for the equivalence check) — otherwise the KDD repo's
+  # own CI would change behavior on push.
+  workflow_call:
+    inputs:
+      contracts_dir:
+        type: string
+        default: 'knowledge/contracts'
+      specs_dir:
+        type: string
+        default: 'specs'
+      okf_dir:
+        type: string
+        default: 'knowledge'
+      rules_dir:
+        type: string
+        default: 'examples/rules'
+      skills_dirs:
+        type: string
+        # validate_skills.py accepts multiple positional dirs; single input,
+        # space-separated, so the expansion lands as two argv slots.
+        default: 'skills .agents/skills'
+      ux_page_dir:
+        type: string
+        default: 'examples/ux-page'
+      diagrams_dir:
+        type: string
+        default: 'examples/diagrams'
+      src_dir_secrets:
+        type: string
+        default: 'src'
 
 jobs:
   validate:
@@ -25,37 +61,37 @@ jobs:
           node-version: '20'
 
       - name: Validate contracts
-        run: python scripts/validate_contracts.py knowledge/contracts
+        run: python scripts/validate_contracts.py ${{ inputs.contracts_dir || 'knowledge/contracts' }}
 
       - name: "Validate specs contracts"
-        run: python scripts/validate_specs.py specs
+        run: python scripts/validate_specs.py ${{ inputs.specs_dir || 'specs' }}
 
       - name: Validate OKF nodes
-        run: python scripts/validate_okf.py knowledge
+        run: python scripts/validate_okf.py ${{ inputs.okf_dir || 'knowledge' }}
 
       - name: Lint ASCII scripts
         run: python scripts/lint_ascii.py scripts
 
       - name: Validate rule contracts
-        run: python scripts/validate_rules.py examples/rules
+        run: python scripts/validate_rules.py ${{ inputs.rules_dir || 'examples/rules' }}
 
       - name: Validate agent skills
-        run: python scripts/validate_skills.py skills .agents/skills
+        run: python scripts/validate_skills.py ${{ inputs.skills_dirs || 'skills .agents/skills' }}
 
       - name: Validate changelog coherence
         run: python scripts/validate_changelog.py
 
       - name: Validate UX/accessibility (HTML pages)
-        run: python scripts/validate_ux_page.py examples/ux-page
+        run: python scripts/validate_ux_page.py ${{ inputs.ux_page_dir || 'examples/ux-page' }}
 
       - name: Validate Mermaid diagrams (flowchart)
-        run: python scripts/validate_diagrams.py examples/diagrams
+        run: python scripts/validate_diagrams.py ${{ inputs.diagrams_dir || 'examples/diagrams' }}
 
       - name: Run each contract's test_command
-        run: python scripts/validate_test_commands.py knowledge/contracts .
+        run: python scripts/validate_test_commands.py ${{ inputs.contracts_dir || 'knowledge/contracts' }} .
 
       - name: Scan for leaked secrets (src only — see knowledge/contracts/secret-scan-gate.md)
-        run: python scripts/scan_secrets.py src
+        run: python scripts/scan_secrets.py ${{ inputs.src_dir_secrets || 'src' }}
 
       - name: Run unit tests (1/2)
         run: python -m unittest discover -s tests -p "test_*.py"

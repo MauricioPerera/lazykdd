@@ -38,6 +38,46 @@ This is a template repository for projects that implement the **Knowledge-Driven
 3. When delegating work to an agent (e.g. an AI coding agent), the agent will read `.agents/AGENTS.md` and immediately understand that it must respect the CCDD contracts of this repository. Cursor, GitHub Copilot, Cline and Windsurf each have their own convention file (`.cursorrules`, `.github/copilot-instructions.md`, `.clinerules`, `.windsurfrules`) — all four are thin pointers to `.agents/AGENTS.md`, so any of those tools picks up the same rules automatically. For a human reviewing what an agent produced, see [`knowledge/supervision-humana.md`](knowledge/supervision-humana.md).
 4. Drop the example artifacts and rewire `knowledge/index.md` with `python scripts/init_project.py --apply --name "<Your Project>"` (it removes every EXAMPLE artifact in the script's explicit `MANIFEST` — sample code and tests, the example OKF nodes, and every example domain (rule contracts, task contracts and their data-model nodes: payments, border control, workflows, routing, editorial, MCP registry, agent wiring); without `--apply` it only prints the plan).
 
+#### Consuming the gates without a full clone (EN-only addition)
+
+<!-- This subsection is the only EN-only addition for distributing the gates as reusable CI (ITEM4). -->
+
+There are two complementary ways to run the KDD gates against your repo without copying the whole template:
+
+- **Mode 1 — your repo is already a fork/clone of this template** (it has the vendored `scripts/` with the same structure). Call the reusable workflow directly:
+
+  ```yaml
+  jobs:
+    kdd:
+      uses: MauricioPerera/KDD/.github/workflows/validate.yml@main
+      with:
+        contracts_dir: knowledge/contracts   # override only the paths you moved
+        specs_dir: specs
+        okf_dir: knowledge
+        # rules_dir, skills_dirs, ux_page_dir, diagrams_dir, src_dir_secrets
+        # all have defaults matching the template; omit the ones you didn't move.
+  ```
+
+  Every input has a default equal to the template's hardcoded path, so a vanilla fork can call it with an empty `with:` block. (Note: these defaults apply only when called via `workflow_call`; the workflow's own native `push`/`pull_request` triggers fall back to the same literals embedded in the run expressions, so the KDD repo's own CI is unchanged.)
+
+- **Mode 2 — your repo is NOT a fork of the template but has its own `knowledge/contracts/`** (no vendored `scripts/`). Use the composite action, which checks out this repo's tooling for you:
+
+  ```yaml
+  steps:
+    - uses: actions/checkout@v4          # YOUR repo (the action assumes this is done first)
+    - uses: MauricioPerera/KDD/.github/actions/validate-contracts@main
+      with:
+        kdd-ref: main                     # pin to a tag for reproducibility
+        contracts-dir: knowledge/contracts
+        okf-dir: knowledge
+        # specs-dir is optional and auto-skipped if your repo has no specs/.
+        # rules-dir / skills-dirs / ux-page-dir / diagrams-dir / src-dir
+        # auto-skip (INFO, exit 0) when absent.
+        # run-test-commands: 'true' also runs each contract's test_command.
+  ```
+
+  The action checks out `MauricioPerera/KDD` into `_kdd/` (not the root, so it does not overwrite your files) and runs the validators against your paths. `validate_contracts` and `validate_okf` are logically required (a missing dir is a real ERROR — it means there are no KDD contracts to validate); `validate_specs` is guarded so a repo without `specs/` stays green; the rest auto-skip. It deliberately does not run `lint_ascii`, the KDD unit-test suite, or `assemble_context` (those are specific to this repo's own tooling).
+
 #### Instantiating for a non-Python project
 
 This template's KDD tooling is Python and stays Python even if your project is not — these are two separate planes (template tooling vs. your project's code).
