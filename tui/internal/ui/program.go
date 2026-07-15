@@ -2,6 +2,8 @@ package ui
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -76,19 +78,74 @@ func (p program) loadContracts() tea.Cmd {
 	}
 }
 
+// loadScaffold shellea `contracts scaffold <name> --json` y devuelve un
+// scaffoldDoneMsg con el path creado (o el error). Mismo patron os/exec que
+// loadGates/loadContracts. El CLI devuelve exit 0 con
+// `{"created":true,"path":"..."}` o exit 1 con `{"error":"..."}` (nombre no
+// kebab-case o contrato ya existente); en ambos caminos se conserva stdout, asi
+// que un *exec.ExitError NO es error de shell-out (se parsea stdout igual). El
+// JSON se parsea aca directo con encoding/json: es glue, no una funcion pura
+// separada (no tiene su propio contrato CCDD). Si el JSON trae `"error"`, se
+// envuelve en un error con fmt.Errorf; si trae `"created":true`, err es nil y
+// path es el valor de `"path"`.
+func (p program) loadScaffold(name string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("python", "scripts/kdd_cli.py", "contracts", "scaffold", name, "--json")
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			if _, ok := err.(*exec.ExitError); !ok {
+				return scaffoldDoneMsg{path: "", err: err}
+			}
+		}
+		var res struct {
+			Created bool   `json:"created"`
+			Path    string `json:"path"`
+			Error   string `json:"error"`
+		}
+		if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+			return scaffoldDoneMsg{path: "", err: err}
+		}
+		if res.Error != "" {
+			return scaffoldDoneMsg{path: "", err: fmt.Errorf("%s", res.Error)}
+		}
+		return scaffoldDoneMsg{path: res.Path, err: nil}
+	}
+}
+
 // Update delega a la logica pura UpdateModel y envuelve la nueva Model de
-// vuelta en el wrapper tea.Model. Para la tecla "r" (refresh), UpdateModel ya
-// reseteo Loading/ContractsLoading y limpio errores (devolviendo cmd nil, la
-// funcion pura no sabe shellear); es ESTE wiring el que detecta "r" y dispara
-// el refresh real reusando loadGates/loadContracts en un tea.Batch (mismo
-// patron que Init). Para cualquier otro msg, el cmd es el que devolvio
-// UpdateModel, sin cambios. Limitacion conocida (primera version): no hay
-// cancelacion ni IDs de peticion, asi que varios "r" apretados seguidos pueden
-// cruzar respuestas viejas con nuevas (carreras) -- aceptado, documentado.
+// vuelta en el wrapper tea.Model. Despues de delegar, el wiring detecta DOS
+// casos puntuales mirando el msg Y el Model ENTRANTE (antes de la delegacion):
+//
+//  1. Enter que confirma el input: si msg es tea.KeyMsg con Type == KeyEnter Y
+//     el Model entrante tenia Scaffolding == true Y ScaffoldInput no vacio, el
+//     tea.Cmd que devuelve Update es loadScaffold(input) (NO el nil que devolvio
+//     UpdateModel, que es pura y no shellea). Un Enter con buffer vacio NO
+//     dispara nada (ahorra un shell-out inutil), pero el modo input igual se
+//     cierra (comportamiento ya fijado por UpdateModel).
+//
+//  2. "r" (refresh): si msg es tea.KeyMsg con String() == "r" Y el Model
+//     entrante NO estaba en scaffolding (en modo input "r" es texto, no
+//     comando), el tea.Cmd es tea.Batch(loadGates, loadContracts) (mismo patron
+//     que Init). UpdateModel ya reseteo Loading/ContractsLoading y limpio
+//     errores.
+//
+// Para cualquier otro msg, el cmd es el que devolvio UpdateModel, sin cambios.
+// Limitacion conocida (primera version): no hay cancelacion ni IDs de peticion,
+// asi que varios "r" apretados seguidos pueden cruzar respuestas viejas con
+// nuevas (carreras) -- aceptado, documentado. Tampoco se auto-refresca el panel
+// de contracts despues de un scaffold exitoso (queda para una tarea futura; el
+// usuario puede apretar "r" a mano).
 func (p program) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	wasScaffolding := p.Model.Scaffolding
+	input := p.Model.ScaffoldInput
 	newModel, cmd := UpdateModel(p.Model, msg)
 	next := program{Model: newModel}
-	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "r" {
+	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter && wasScaffolding && input != "" {
+		return next, next.loadScaffold(input)
+	}
+	if key, ok := msg.(tea.KeyMsg); ok && !wasScaffolding && key.String() == "r" {
 		return next, tea.Batch(next.loadGates(), next.loadContracts())
 	}
 	return next, cmd

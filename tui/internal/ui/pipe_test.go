@@ -146,3 +146,46 @@ func TestInitPipelineContracts(t *testing.T) {
 		t.Fatalf("contracts summary should contain contracts=, got %q", loaded.summary)
 	}
 }
+
+// TestInitPipelineScaffold ejercita el tea.Cmd real devuelto por loadScaffold()
+// del wrapper llamandolo directamente como funcion. shellea `contracts scaffold
+// <name> --json` de verdad, que ESCRIBE un archivo nuevo en
+// knowledge/contracts/ del repo real -- por eso este test es opt-in y usa un
+// nombre DESCARTABLE que no colisiona con contratos reales. Verifica que el
+// scaffoldDoneMsg resultante tiene err == nil y path no vacio, y que el archivo
+// existe en disco. BORRA el archivo al final (t.Cleanup, registrado ANTES de
+// shellerar para que corra incluso si el test falla a mitad de camino). NUNCA
+// deja ese archivo en el repo: se verifica con `git status --short` al final de
+// la tarea. Nota: a diferencia de loadGates, scaffold NO dispara go test (solo
+// crea un archivo desde la plantilla), asi que NO hay recursion con
+// validate_test_commands -- igual se usa maybeSkipPipe para el chdir al repo
+// root (el CLI escribe a knowledge/contracts/ relativo al cwd).
+func TestInitPipelineScaffold(t *testing.T) {
+	maybeSkipPipe(t)
+	const name = "zz-pipe-test-scaffold-tmp"
+	// Path esperado relativo al repo root (maybeSkipPipe ya hizo chdir ahi).
+	// Se registra el Cleanup ANTES de shellerar: corre incluso si el test
+	// falla despues de que el archivo fue creado.
+	expectedPath := filepath.Join("knowledge", "contracts", name+".md")
+	t.Cleanup(func() { _ = os.Remove(expectedPath) })
+
+	p := program{}
+	cmd := p.loadScaffold(name)
+	if cmd == nil {
+		t.Fatalf("loadScaffold() returned nil cmd")
+	}
+	msg := cmd()
+	done, ok := msg.(scaffoldDoneMsg)
+	if !ok {
+		t.Fatalf("cmd() should return scaffoldDoneMsg, got %T", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("expected nil err from scaffold pipeline, got %v", done.err)
+	}
+	if done.path == "" {
+		t.Fatalf("expected non-empty path from scaffold, got empty (msg=%+v)", done)
+	}
+	if _, err := os.Stat(done.path); err != nil {
+		t.Fatalf("scaffolded file should exist at %s: %v", done.path, err)
+	}
+}

@@ -14,7 +14,7 @@ import (
 // model.go, este test lo pega y falla, que es justo lo que debe hacer un
 // oraculo congelado. El const del paquete (helpLine en model.go) NO se usa
 // desde los tests; estos referencian solo a wantHelpLine.
-const wantHelpLine = "\n[g]ates [c]ontracts [r]efresh [q]uit"
+const wantHelpLine = "\n[g]ates [c]ontracts [r]efresh [n]ew [q]uit"
 
 // --- UpdateModel: gatesLoadedMsg (comportamiento historico, sin cambios) ---
 
@@ -113,7 +113,49 @@ func TestUpdateModel_ContractsLoadedError(t *testing.T) {
 	}
 }
 
-// --- UpdateModel: keys (quit + teclas de vista + refresh) ---
+// --- UpdateModel: scaffoldDoneMsg (nuevo, resultado del shell-out de scaffold) ---
+
+// TestUpdateModel_ScaffoldDoneSuccess: un scaffoldDoneMsg sin error setea
+// ScaffoldMsg a "creado: <path>". Scaffolding ya era false (se apago al apretar
+// Enter) y ScaffoldInput NO se limpia (se pisa la proxima vez que se entra en
+// modo scaffolding con "n"). cmd nil.
+func TestUpdateModel_ScaffoldDoneSuccess(t *testing.T) {
+	m := Model{Scaffolding: false, ScaffoldInput: "my-task", ViewMode: "gates"}
+	got, cmd := UpdateModel(m, scaffoldDoneMsg{path: "knowledge/contracts/my-task.md", err: nil})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.ScaffoldMsg != "creado: knowledge/contracts/my-task.md" {
+		t.Errorf("ScaffoldMsg mismatch: want %q, got %q", "creado: knowledge/contracts/my-task.md", got.ScaffoldMsg)
+	}
+	if got.Scaffolding {
+		t.Errorf("Scaffolding should stay false")
+	}
+	if got.ScaffoldInput != "my-task" {
+		t.Errorf("ScaffoldInput should be unchanged (conserved), got %q", got.ScaffoldInput)
+	}
+	if got.ViewMode != "gates" {
+		t.Errorf("ViewMode should be unchanged, got %q", got.ViewMode)
+	}
+}
+
+// TestUpdateModel_ScaffoldDoneError: un scaffoldDoneMsg con error setea
+// ScaffoldMsg a "error: <err>". ScaffoldInput se conserva. cmd nil.
+func TestUpdateModel_ScaffoldDoneError(t *testing.T) {
+	m := Model{ScaffoldInput: "bad name"}
+	got, cmd := UpdateModel(m, scaffoldDoneMsg{path: "", err: errors.New("invalid name")})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.ScaffoldMsg != "error: invalid name" {
+		t.Errorf("ScaffoldMsg mismatch: want %q, got %q", "error: invalid name", got.ScaffoldMsg)
+	}
+	if got.ScaffoldInput != "bad name" {
+		t.Errorf("ScaffoldInput should be unchanged, got %q", got.ScaffoldInput)
+	}
+}
+
+// --- UpdateModel: keys (quit + teclas de vista + refresh + nuevo "n") ---
 
 // TestUpdateModel_KeyQ_Quits: la tecla "q" pone Quitting en true y devuelve
 // tea.Quit como cmd (cmd() produce un tea.QuitMsg).
@@ -263,7 +305,31 @@ func TestUpdateModel_KeyR_RefreshesFromCleanState(t *testing.T) {
 	}
 }
 
-// TestUpdateModel_OtherKey_NoChange: una tecla que no es "q"/"ctrl+c"/"g"/"c"/"r"
+// TestUpdateModel_KeyN_EntersScaffolding: la tecla "n" (modo normal) entra en
+// modo scaffolding: Scaffolding true, ScaffoldInput "", ScaffoldMsg "" (limpia
+// el resultado del intento anterior). El resto del model (Summary/ViewMode/
+// Quitting) se preserva sin cambios. cmd nil.
+func TestUpdateModel_KeyN_EntersScaffolding(t *testing.T) {
+	m := Model{Summary: "s", ViewMode: "contracts", ScaffoldMsg: "prev intento", Quitting: false}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	if cmd != nil {
+		t.Errorf("expected nil cmd for n")
+	}
+	if !got.Scaffolding {
+		t.Errorf("Scaffolding should be true")
+	}
+	if got.ScaffoldInput != "" {
+		t.Errorf("ScaffoldInput should be empty, got %q", got.ScaffoldInput)
+	}
+	if got.ScaffoldMsg != "" {
+		t.Errorf("ScaffoldMsg should be cleared, got %q", got.ScaffoldMsg)
+	}
+	if got.Summary != "s" || got.ViewMode != "contracts" || got.Quitting {
+		t.Errorf("rest of model should be unchanged: %+v", got)
+	}
+}
+
+// TestUpdateModel_OtherKey_NoChange: una tecla que no es "q"/"ctrl+c"/"g"/"c"/"r"/"n"
 // no cambia el model ni pide comandos (incluido ViewMode).
 func TestUpdateModel_OtherKey_NoChange(t *testing.T) {
 	m := Model{Summary: "s", Err: nil, Loading: true, Quitting: false, ViewMode: "contracts"}
@@ -309,11 +375,269 @@ func TestUpdateModel_UnknownMsg_NoChange(t *testing.T) {
 	}
 }
 
+// --- UpdateModel: modo scaffolding (delegacion a handleScaffoldKey) ---
+//
+// En modo scaffolding (m.Scaffolding true) TODA tea.KeyMsg se delega a
+// handleScaffoldKey ANTES del switch de comandos normal: "g"/"c"/"r"/"q" son
+// texto a tipear, NO comandos. UpdateModel solo anade la guarda `if m.Scaffolding`
+// dentro del case tea.KeyMsg (una linea de delegacion, bajo costo) y delega.
+
+// TestUpdateModel_Scaffolding_TypeRunes_Appends: tipear caracteres normales en
+// modo scaffolding appendea a ScaffoldInput. Scaffolding sigue true. cmd nil.
+func TestUpdateModel_Scaffolding_TypeRunes_Appends(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "ab"}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("cde")})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if !got.Scaffolding {
+		t.Errorf("Scaffolding should stay true")
+	}
+	if got.ScaffoldInput != "abcde" {
+		t.Errorf("ScaffoldInput mismatch: want %q, got %q", "abcde", got.ScaffoldInput)
+	}
+}
+
+// TestUpdateModel_Scaffolding_Backspace_RemovesLastRune: backspace saca el
+// ULTIMO RUNE (no byte). Scaffolding sigue true. cmd nil.
+func TestUpdateModel_Scaffolding_Backspace_RemovesLastRune(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "abc"}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if !got.Scaffolding {
+		t.Errorf("Scaffolding should stay true")
+	}
+	if got.ScaffoldInput != "ab" {
+		t.Errorf("ScaffoldInput mismatch: want %q, got %q", "ab", got.ScaffoldInput)
+	}
+}
+
+// TestUpdateModel_Scaffolding_Backslice_Empty_NoChange: backspace con el buffer
+// vacio no hace nada (sin panic, sin cambiar Scaffolding). cmd nil.
+func TestUpdateModel_Scaffolding_Backslice_Empty_NoChange(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: ""}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if !got.Scaffolding {
+		t.Errorf("Scaffolding should stay true")
+	}
+	if got.ScaffoldInput != "" {
+		t.Errorf("ScaffoldInput should stay empty, got %q", got.ScaffoldInput)
+	}
+}
+
+// TestUpdateModel_Scaffolding_Esc_Cancels_PreservesScaffoldMsg: esc cancela el
+// modo input (Scaffolding false, ScaffoldInput "") pero NO toca ScaffoldMsg
+// (el resultado del intento anterior se conserva al cancelar). cmd nil.
+func TestUpdateModel_Scaffolding_Esc_Cancels_PreservesScaffoldMsg(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "typed", ScaffoldMsg: "prev"}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.Scaffolding {
+		t.Errorf("Scaffolding should be false")
+	}
+	if got.ScaffoldInput != "" {
+		t.Errorf("ScaffoldInput should be cleared, got %q", got.ScaffoldInput)
+	}
+	if got.ScaffoldMsg != "prev" {
+		t.Errorf("ScaffoldMsg should be preserved on cancel, got %q", got.ScaffoldMsg)
+	}
+}
+
+// TestUpdateModel_Scaffolding_Enter_NonEmpty_ConserveInput: enter con buffer no
+// vacio sale del modo input (Scaffolding false) PERO CONSERVA ScaffoldInput en
+// el Model que devuelve UpdateModel (el wiring en program.Update lo lee para
+// saber que nombre scaffoldear). cmd nil (la funcion pura no shellea).
+func TestUpdateModel_Scaffolding_Enter_NonEmpty_ConserveInput(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "my-task", ScaffoldMsg: "prev"}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Errorf("expected nil cmd (pure UpdateModel does not shell out)")
+	}
+	if got.Scaffolding {
+		t.Errorf("Scaffolding should be false after enter")
+	}
+	if got.ScaffoldInput != "my-task" {
+		t.Errorf("ScaffoldInput should be conserved, got %q", got.ScaffoldInput)
+	}
+	if got.ScaffoldMsg != "prev" {
+		t.Errorf("ScaffoldMsg should be unchanged, got %q", got.ScaffoldMsg)
+	}
+}
+
+// TestUpdateModel_Scaffolding_Enter_Empty_NoCrash: enter con buffer VACIO
+// tambien sale del modo input (Scaffolding false) sin crashear. cmd nil. El
+// wiring NO dispara scaffold para un Enter con buffer vacio (ahorra shell-out
+// inutil); el modo input igual se cierra.
+func TestUpdateModel_Scaffolding_Enter_Empty_NoCrash(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: ""}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.Scaffolding {
+		t.Errorf("Scaffolding should be false after enter")
+	}
+	if got.ScaffoldInput != "" {
+		t.Errorf("ScaffoldInput should be empty, got %q", got.ScaffoldInput)
+	}
+}
+
+// TestUpdateModel_Scaffolding_OtherKey_NoChange: una tecla no reconocida en
+// modo input (flecha arriba) no cambia nada. Scaffolding sigue true, input y
+// ViewMode intactos. cmd nil.
+func TestUpdateModel_Scaffolding_OtherKey_NoChange(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "ab", ViewMode: "gates"}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyUp})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if !got.Scaffolding {
+		t.Errorf("Scaffolding should stay true")
+	}
+	if got.ScaffoldInput != "ab" {
+		t.Errorf("ScaffoldInput should be unchanged, got %q", got.ScaffoldInput)
+	}
+	if got.ViewMode != "gates" {
+		t.Errorf("ViewMode should be unchanged, got %q", got.ViewMode)
+	}
+}
+
+// TestUpdateModel_Scaffolding_CommandKeysAreText: test EXPLICITO de que "g"/"c"/
+// "r"/"q" mientras Scaffolding es true se tratan como TEXTO TIPEADO, NO como
+// comandos: se appendean a ScaffoldInput, NO cambian ViewMode, NO ponen
+// Quitting en true (la "q" no sale) y el cmd es nil (no tea.Quit). Es la
+// precedencia del modo input sobre TODO lo demas.
+func TestUpdateModel_Scaffolding_CommandKeysAreText(t *testing.T) {
+	for _, ch := range []string{"g", "c", "r", "q"} {
+		m := Model{Scaffolding: true, ScaffoldInput: "x", ViewMode: "contracts", Quitting: false}
+		got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(ch)})
+		if cmd != nil {
+			t.Errorf("key %q: expected nil cmd (text, not command)", ch)
+		}
+		if !got.Scaffolding {
+			t.Errorf("key %q: Scaffolding should stay true", ch)
+		}
+		want := "x" + ch
+		if got.ScaffoldInput != want {
+			t.Errorf("key %q: ScaffoldInput should be %q, got %q", ch, want, got.ScaffoldInput)
+		}
+		if got.ViewMode != "contracts" {
+			t.Errorf("key %q: ViewMode should be unchanged (contracts), got %q", ch, got.ViewMode)
+		}
+		if got.Quitting {
+			t.Errorf("key %q: Quitting should stay false (q is text in scaffolding mode)", ch)
+		}
+	}
+}
+
+// --- handleScaffoldKey (helper extraido del target, target secundario) ---
+//
+// handleScaffoldKey fue extraida de UpdateModel por presupuesto de complejidad
+// (UpdateModel estaba en cyclomatic 8/9). No es el target del gate (el gate
+// sigue midiendo solo UpdateModel via signature), pero SI tiene sus propios
+// casos de test en este oraculo congelado.
+
+// TestHandleScaffoldKey_Runes_Appends: KeyRunes appendea string(key.Runes).
+func TestHandleScaffoldKey_Runes_Appends(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "ab"}
+	got, cmd := handleScaffoldKey(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.ScaffoldInput != "abc" {
+		t.Errorf("ScaffoldInput mismatch: want %q, got %q", "abc", got.ScaffoldInput)
+	}
+	if !got.Scaffolding {
+		t.Errorf("Scaffolding should stay true")
+	}
+}
+
+// TestHandleScaffoldKey_Backspace_RemovesLastRune: backspace saca el ultimo rune.
+func TestHandleScaffoldKey_Backspace_RemovesLastRune(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "abc"}
+	got, _ := handleScaffoldKey(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	if got.ScaffoldInput != "ab" {
+		t.Errorf("ScaffoldInput mismatch: want %q, got %q", "ab", got.ScaffoldInput)
+	}
+	if !got.Scaffolding {
+		t.Errorf("Scaffolding should stay true")
+	}
+}
+
+// TestHandleScaffoldKey_Backspace_UTF8: backspace saca el ULTIMO RUNE, no el
+// ultimo byte (seguro con UTF-8: 'é' son 2 bytes, sacarlo deja "a", no un rune
+// truncado).
+func TestHandleScaffoldKey_Backspace_UTF8(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "aé"} // 'é' = 2 bytes, 1 rune
+	got, _ := handleScaffoldKey(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	if got.ScaffoldInput != "a" {
+		t.Errorf("expected %q (last rune removed), got %q", "a", got.ScaffoldInput)
+	}
+}
+
+// TestHandleScaffoldKey_Esc_Clears: esc pone Scaffolding false y ScaffoldInput
+// "", pero NO toca ScaffoldMsg (se conserva al cancelar).
+func TestHandleScaffoldKey_Esc_Clears(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "x", ScaffoldMsg: "keep"}
+	got, cmd := handleScaffoldKey(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.Scaffolding {
+		t.Errorf("Scaffolding should be false")
+	}
+	if got.ScaffoldInput != "" {
+		t.Errorf("ScaffoldInput should be cleared, got %q", got.ScaffoldInput)
+	}
+	if got.ScaffoldMsg != "keep" {
+		t.Errorf("ScaffoldMsg should be preserved, got %q", got.ScaffoldMsg)
+	}
+}
+
+// TestHandleScaffoldKey_Enter_ConserveInput: enter pone Scaffolding false y
+// CONSERVA ScaffoldInput (el wiring lo lee para scaffoldear).
+func TestHandleScaffoldKey_Enter_ConserveInput(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "task"}
+	got, cmd := handleScaffoldKey(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.Scaffolding {
+		t.Errorf("Scaffolding should be false")
+	}
+	if got.ScaffoldInput != "task" {
+		t.Errorf("ScaffoldInput should be conserved, got %q", got.ScaffoldInput)
+	}
+}
+
+// TestHandleScaffoldKey_Other_NoChange: una tecla no reconocida (flecha abajo)
+// no cambia nada. Scaffolding sigue true, input intacto. cmd nil.
+func TestHandleScaffoldKey_Other_NoChange(t *testing.T) {
+	m := Model{Scaffolding: true, ScaffoldInput: "ab"}
+	got, cmd := handleScaffoldKey(m, tea.KeyMsg{Type: tea.KeyDown})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.ScaffoldInput != "ab" {
+		t.Errorf("ScaffoldInput should be unchanged, got %q", got.ScaffoldInput)
+	}
+	if !got.Scaffolding {
+		t.Errorf("Scaffolding should stay true")
+	}
+}
+
 // --- View ---
 
 // TestView_Quitting: devuelve string vacio (Bubble Tea limpia la pantalla al
 // salir; no queremos residuo). Tiene precedencia sobre todo, incluida la linea
-// de ayuda (no se agrega al salir).
+// de ayuda (no se agrega al salir) y el modo scaffolding.
 func TestView_Quitting(t *testing.T) {
 	got := View(Model{Quitting: true, Summary: "whatever", Err: errors.New("e"), Loading: true})
 	if got != "" {
@@ -327,6 +651,37 @@ func TestView_QuittingPrecedenceOverContracts(t *testing.T) {
 	got := View(Model{Quitting: true, ViewMode: "contracts", ContractsErr: errors.New("e"), ContractsLoading: true})
 	if got != "" {
 		t.Errorf("expected empty string when quitting, got %q", got)
+	}
+}
+
+// TestView_QuittingPrecedenceOverScaffolding: quitting gana sobre el modo
+// scaffolding (no se muestra el prompt de input al salir).
+func TestView_QuittingPrecedenceOverScaffolding(t *testing.T) {
+	got := View(Model{Quitting: true, Scaffolding: true, ScaffoldInput: "x"})
+	if got != "" {
+		t.Errorf("expected empty string when quitting, got %q", got)
+	}
+}
+
+// TestView_Scaffolding_Prompt: en modo scaffolding View devuelve una vista
+// DISTINTA que reemplaza TODO lo demas (sin helpLine): el prompt exacto + el
+// input tipeado. Sin trailing newline (decision documentada: consistente con
+// kdd.Summarize/SummarizeContractsStatus que tampoco lo llevan).
+func TestView_Scaffolding_Prompt(t *testing.T) {
+	got := View(Model{Scaffolding: true, ScaffoldInput: "my-task", Summary: "x", ViewMode: "contracts"})
+	want := "nuevo contrato (kebab-case), enter confirma, esc cancela:\n> my-task"
+	if got != want {
+		t.Errorf("View scaffolding mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_Scaffolding_EmptyInput: el prompt con buffer vacio termina en "> "
+// (sin trailing newline).
+func TestView_Scaffolding_EmptyInput(t *testing.T) {
+	got := View(Model{Scaffolding: true, ScaffoldInput: ""})
+	want := "nuevo contrato (kebab-case), enter confirma, esc cancela:\n> "
+	if got != want {
+		t.Errorf("View scaffolding empty mismatch: want %q, got %q", want, got)
 	}
 }
 
@@ -416,5 +771,41 @@ func TestView_GatesUnaffectedByContractsFields(t *testing.T) {
 	want := "overall_ok=true pass=0 fail=0\n" + wantHelpLine
 	if got != want {
 		t.Errorf("gates view should ignore contracts fields: want %q, got %q", want, got)
+	}
+}
+
+// --- View: linea extra de ScaffoldMsg (nuevo) ---
+
+// TestView_Normal_WithScaffoldMsg_AddsLine: en vista normal (no scaffolding),
+// si ScaffoldMsg != "" se agrega una linea "\n" + ScaffoldMsg ANTES de helpLine.
+func TestView_Normal_WithScaffoldMsg_AddsLine(t *testing.T) {
+	summary := "overall_ok=true pass=2 fail=0"
+	got := View(Model{Summary: summary, ScaffoldMsg: "creado: knowledge/contracts/foo.md"})
+	want := summary + "\n" + "\ncreado: knowledge/contracts/foo.md" + wantHelpLine
+	if got != want {
+		t.Errorf("want %q, got %q", want, got)
+	}
+}
+
+// TestView_Contracts_WithScaffoldMsg_AddsLine: la linea extra de ScaffoldMsg se
+// agrega tambien en la vista de contracts.
+func TestView_Contracts_WithScaffoldMsg_AddsLine(t *testing.T) {
+	summary := "contracts=2\na: draft"
+	got := View(Model{ViewMode: "contracts", Contracts: summary, ScaffoldMsg: "error: bad"})
+	want := summary + "\n" + "\nerror: bad" + wantHelpLine
+	if got != want {
+		t.Errorf("want %q, got %q", want, got)
+	}
+}
+
+// TestView_Normal_WithEmptyScaffoldMsg_NoExtraLine: con ScaffoldMsg vacio NO se
+// agrega nada: byte-identico al comportamiento previo a esta tarea (sin la
+// linea extra). Verifica que el layout no cambio para el caso comun.
+func TestView_Normal_WithEmptyScaffoldMsg_NoExtraLine(t *testing.T) {
+	summary := "overall_ok=true pass=2 fail=0"
+	got := View(Model{Summary: summary, ScaffoldMsg: ""})
+	want := summary + "\n" + wantHelpLine
+	if got != want {
+		t.Errorf("want %q, got %q", want, got)
 	}
 }
