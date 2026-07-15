@@ -415,6 +415,145 @@ def _regex_deny(context, patterns):
 # assemble
 # ---------------------------------------------------------------------------
 
+def _read_slot_raw(s, base_dir, task, cap, comp, chars_per_token):
+    """Devuelve ``(raw, selected, cut_node, omitted_nodes)`` segun el
+    ``source`` del slot. ``selected``/``cut_node``/``omitted_nodes`` son
+    ``None`` salvo para ``okf_nodes`` (que los completa el retriever).
+
+    Puede lanzar ``OSError`` si la lectura fisica falla; la caller la
+    re-lanza con el ``id`` del slot (mismo mensaje que el comportamiento
+    previo). ``cap``/``comp``/``chars_per_token`` solo los usa
+    ``okf_nodes`` para su corte por nodo.
+    """
+    if s["source"] == "static":
+        return _read_file(base_dir, s["path"]), None, None, None
+    if s["source"] == "runtime":
+        return task, None, None, None
+    # dynamic
+    if s["provider"] == "okf_index":
+        return _read_file(base_dir, "knowledge/index.md"), None, None, None
+    result = _assemble_okf_nodes(base_dir, task, cap, comp, chars_per_token)
+    return result["raw"], result["selected"], result["cut"], \
+        result["omitted_nodes"]
+
+
+def _decide_content(raw, cap, comp, min_tokens, chars_per_token):
+    """Devuelve el ``content`` a incluir para un slot, o ``None`` si se
+    omite: ``cap <= 0`` (sin presupuesto), por debajo del piso
+    ``min_tokens``, o contenido que excede ``cap`` con ``compaction none``.
+
+    Logica identica a la rama de inclusion previa (corte por caracteres
+    determinista via ``_compact`` cuando ``comp != none``).
+    """
+    if cap <= 0:
+        return None
+    if min_tokens and cap < min_tokens:
+        return None
+    raw_tokens = _tokens(raw, chars_per_token)
+    if raw_tokens <= cap:
+        return raw
+    if comp == "none":
+        return None
+    return _compact(raw, cap, comp, chars_per_token)
+
+
+def _process_slot(s, base_dir, task, available, used, chars_per_token):
+    """Procesa UN slot: devuelve ``(report, section)``.
+
+    ``report`` es el dict de reporte del slot (status included|omitted,
+    tokens, compaction, sign/selected/cut/omitted_nodes si aplica).
+    ``section`` es el string ``"### slot: {id}\\n{content}"`` a agregar a
+    ``sections`` si se incluyo, o ``None`` si se omitio.
+
+    ``used`` es el acumulado de slots PREVIOS (no incluye a este): el
+    ``cap`` real es ``min(slot_cap, available - used)`` recalculado aca,
+    igual que en el loop original. La caller suma ``report["tokens"]`` a
+    su ``used`` despues de cada llamada.
+
+    Lanza ``OSError`` con mensaje ``"slot {id} no se pudo leer: {e}"``
+    (encadenado con ``from e``) si el source no puede leerse fisicamente,
+    igual que antes.
+    """
+    sid = s["id"]
+    comp = s.get("compaction", "none")
+    slot_max = s.get("max_tokens")
+    min_tokens = s.get("min_tokens", 0)
+    do_sign = bool(s.get("sign"))
+    report = {
+        "id": sid,
+        "priority": s["priority"],
+        "status": "omitted",
+        "tokens": 0,
+        "compaction": comp,
+    }
+
+    # tope de tokens para este slot: min(slot_cap, remaining)
+    slot_cap = slot_max if isinstance(slot_max, int) else available
+    remaining = available - used
+    cap = min(slot_cap, remaining)
+
+    try:
+        raw, selected, cut_node, omitted_nodes = _read_slot_raw(
+            s, base_dir, task, cap, comp, chars_per_token)
+    except OSError as e:
+        raise OSError("slot {} no se pudo leer: {}".format(sid, e)) from e
+
+    if selected is not None:
+        report["selected"] = selected
+    if cut_node is not None:
+        report["cut"] = cut_node
+    if omitted_nodes is not None:
+        report["omitted_nodes"] = omitted_nodes
+
+    content = _decide_content(raw, cap, comp, min_tokens, chars_per_token)
+    if content is None:
+        return report, None
+    report["status"] = "included"
+    report["tokens"] = _tokens(content, chars_per_token)
+    if do_sign:
+        report["sign"] = _sha12(content)
+    return report, "### slot: {}\n{}".format(sid, content)
+
+
+def _evaluate_guardrails(base_dir, task, context, ref_cfg, regex_cfg,
+                         slot_reports, used, available, max_tokens,
+                         output_reserve, configured):
+    """Corre ``reference_check`` (solo agrega findings) y ``regex_deny``
+    (puede abortar). Devuelve el ``result`` final via ``_build_result``.
+
+    Si ``regex_deny`` dispara con ``on_fail == 'abort'``, construye el
+    ``result`` parcial (``abort=True``, mismo argumentos/orden que antes)
+    y lanza ``GuardrailAbort(result, finding)``. Si ``on_fail != 'abort'``
+    solo agrega el finding y continua (no aborta). ``reference_check`` y
+    ``regex_deny`` solo corren si estan configurados (cfg no ``None``).
+    """
+    findings = []
+    # reference_check (report, no aborta)
+    if ref_cfg is not None:
+        for f in _reference_check(base_dir, task):
+            findings.append("reference_check: " + f)
+
+    # regex_deny sobre el contexto ensamblado
+    if regex_cfg is not None:
+        patterns = regex_cfg.get("patterns", [])
+        on_fail = regex_cfg.get("on_fail", "abort")
+        hit = _regex_deny(context, patterns) if patterns else None
+        if hit is not None:
+            finding = "regex_deny: patron matcheado: {!r}".format(hit)
+            findings.append(finding)
+            if on_fail == "abort":
+                result = _build_result(slot_reports, context, used, available,
+                                       max_tokens, output_reserve,
+                                       findings, abort=True,
+                                       configured=configured)
+                raise GuardrailAbort(result, finding)
+            # on_fail != abort: solo reporta (no aborta)
+
+    return _build_result(slot_reports, context, used, available,
+                         max_tokens, output_reserve, findings, abort=False,
+                         configured=configured)
+
+
 def assemble(contract, task, base_dir):
     """Ensambla el contexto.
 
@@ -457,108 +596,19 @@ def assemble(contract, task, base_dir):
     sections = []
 
     for s in slots:
-        sid = s["id"]
-        comp = s.get("compaction", "none")
-        slot_max = s.get("max_tokens")
-        min_tokens = s.get("min_tokens", 0)
-        do_sign = bool(s.get("sign"))
-        report = {
-            "id": sid,
-            "priority": s["priority"],
-            "status": "omitted",
-            "tokens": 0,
-            "compaction": comp,
-        }
-
-        # tope de tokens para este slot
-        slot_cap = slot_max if isinstance(slot_max, int) else available
-        remaining = available - used
-        cap = min(slot_cap, remaining)
-
-        # obtener contenido crudo segun source
-        raw = ""
-        selected = None
-        cut_node = None
-        omitted_nodes = None
-        try:
-            if s["source"] == "static":
-                raw = _read_file(base_dir, s["path"])
-            elif s["source"] == "dynamic":
-                if s["provider"] == "okf_index":
-                    raw = _read_file(base_dir, "knowledge/index.md")
-                elif s["provider"] == "okf_nodes":
-                    result = _assemble_okf_nodes(base_dir, task, cap, comp,
-                                                 chars_per_token)
-                    raw = result["raw"]
-                    selected = result["selected"]
-                    cut_node = result["cut"]
-                    omitted_nodes = result["omitted_nodes"]
-            elif s["source"] == "runtime":
-                raw = task
-        except OSError as e:
-            raise OSError("slot {} no se pudo leer: {}".format(sid, e)) \
-                from e
-
-        if selected is not None:
-            report["selected"] = selected
-        if cut_node is not None:
-            report["cut"] = cut_node
-        if omitted_nodes is not None:
-            report["omitted_nodes"] = omitted_nodes
-
-        # decidir inclusion
-        if cap <= 0:
-            pass  # omitido
-        elif min_tokens and cap < min_tokens:
-            pass  # por debajo del piso
-        else:
-            raw_tokens = _tokens(raw, chars_per_token)
-            if raw_tokens <= cap:
-                content = raw
-            else:
-                if comp == "none":
-                    content = None  # no se recorta -> no cabe
-                else:
-                    content = _compact(raw, cap, comp, chars_per_token)
-            if content is not None:
-                report["status"] = "included"
-                report["tokens"] = _tokens(content, chars_per_token)
-                if do_sign:
-                    report["sign"] = _sha12(content)
-                used += report["tokens"]
-                sections.append("### slot: {}\n{}".format(sid, content))
-
+        report, section = _process_slot(s, base_dir, task, available, used,
+                                         chars_per_token)
+        used += report["tokens"]
+        if section is not None:
+            sections.append(section)
         slot_reports.append(report)
 
     # contexto final
     context = "\n\n".join(sections)
 
-    # guardrails
-    findings = []
-    # reference_check (report, no aborta)
-    if ref_cfg is not None:
-        for f in _reference_check(base_dir, task):
-            findings.append("reference_check: " + f)
-
-    # regex_deny sobre el contexto ensamblado
-    if regex_cfg is not None:
-        patterns = regex_cfg.get("patterns", [])
-        on_fail = regex_cfg.get("on_fail", "abort")
-        hit = _regex_deny(context, patterns) if patterns else None
-        if hit is not None:
-            finding = "regex_deny: patron matcheado: {!r}".format(hit)
-            findings.append(finding)
-            if on_fail == "abort":
-                result = _build_result(slot_reports, context, used, available,
-                                       max_tokens, output_reserve,
-                                       findings, abort=True,
-                                       configured=configured)
-                raise GuardrailAbort(result, finding)
-            # on_fail != abort: solo reporta (no aborta)
-
-    return _build_result(slot_reports, context, used, available,
-                         max_tokens, output_reserve, findings, abort=False,
-                         configured=configured)
+    return _evaluate_guardrails(base_dir, task, context, ref_cfg, regex_cfg,
+                                slot_reports, used, available, max_tokens,
+                                output_reserve, configured)
 
 
 def _build_result(slot_reports, context, used, available, max_tokens,

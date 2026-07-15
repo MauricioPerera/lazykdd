@@ -11,9 +11,10 @@ signature: "def assemble(contract: dict, task: str, base_dir: str) -> dict:"
 test_command: "python -m unittest tests/test_assemble_context.py"
 test_cwd: ../..
 budget:
-  max_cyclomatic_complexity: 10
-  max_nesting_depth: 4
+  cyclomatic_max: 9
+  nesting_max: 3
   params_max: 4
+  lines_max: 57
 tests: "tests/test_assemble_context.py"
 tests_sha256: "1a9f103cc9ad634ca5df39e3573fc617612bd7fbfac3d7df03856e8825dd4801"
 touch_only: ['scripts/assemble_context.py']
