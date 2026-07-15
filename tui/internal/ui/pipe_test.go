@@ -225,3 +225,37 @@ func TestLoadDetail_RealContract(t *testing.T) {
 		t.Fatalf("content should contain frontmatter \"---\", got %q", detail.content[:min(40, len(detail.content))])
 	}
 }
+
+// TestLoadGateDetail_RealGate ejercita el tea.Cmd real devuelto por
+// loadGateDetail() del wrapper llamandolo directamente como funcion. shellea
+// `gates run <name> --json` de verdad: corre un gate REAL de solo lectura
+// (lint_ascii, rapido y sin side effects). A diferencia de loadDetail (que lee
+// disco), este SI shellea a python y corre un gate; lint_ascii NO dispara
+// validate_test_commands (no corre go test), asi que NO hay recursion con el
+// gate, pero igual se usa maybeSkipPipe para el chdir al repo root, para
+// mantener el `go test ./...` default 100% puro (HECHO 3) y por consistencia
+// con el resto de los pipe tests. Verifica que el gateDetailMsg resultante
+// tiene err == nil y content contiene "exit_code=" (la marca que deja
+// kdd.SummarizeGateDetail en la forma exitosa). Para correrlo de verdad:
+//
+//	LAZYKDD_RUN_PIPE=1 go -C tui test -run TestLoadGateDetail_RealGate -v ./internal/ui/
+func TestLoadGateDetail_RealGate(t *testing.T) {
+	maybeSkipPipe(t)
+	const name = "lint_ascii"
+	p := program{}
+	cmd := p.loadGateDetail(name)
+	if cmd == nil {
+		t.Fatalf("loadGateDetail() returned nil cmd")
+	}
+	msg := cmd()
+	detail, ok := msg.(gateDetailMsg)
+	if !ok {
+		t.Fatalf("cmd() should return gateDetailMsg, got %T", msg)
+	}
+	if detail.err != nil {
+		t.Fatalf("expected nil err running real gate %s: %v", name, detail.err)
+	}
+	if !strings.Contains(detail.content, "exit_code=") {
+		t.Fatalf("content should contain \"exit_code=\", got %q", detail.content)
+	}
+}

@@ -1071,17 +1071,71 @@ func TestView_Loading(t *testing.T) {
 	}
 }
 
-// TestView_Normal: el resumen tal cual + un newline final + wantHelpLine. Como
-// kdd.Summarize NO trae trailing newline (por diseno), View es quien lo agrega.
-func TestView_Normal(t *testing.T) {
-	summary := "overall_ok=true pass=2 fail=0\n[PASS] a\n[PASS] b"
-	got := View(Model{Summary: summary})
-	want := summary + "\n" + wantHelpLine
+// TestView_GatesList_RenderedWithCursor: la vista normal de gates RENDERIZA la
+// lista desde GateItems con el cursor "> " en la fila GatesSelectedIndex y "  "
+// en las demas, con header "overall_ok=<bool> pass=<N> fail=<M>" (overall_ok
+// derivado de fail==0) y "[PASS] <name>"/"[FAIL] <name>" por fila segun
+// ExitCode. NO usa el string plano Summary. helpLine al final. Sin trailing
+// doble newline. (Reemplaza al viejo TestView_Normal que renderizaba Summary:
+// la vista de gates ahora renderiza la lista navegable, simetrica a contracts.)
+func TestView_GatesList_RenderedWithCursor(t *testing.T) {
+	items := []kdd.GateResult{
+		{Name: "alpha", ExitCode: 0},
+		{Name: "zeta", ExitCode: 1},
+	}
+	got := View(Model{ViewMode: "gates", GateItems: items, GatesSelectedIndex: 0})
+	want := "overall_ok=false pass=1 fail=1\n> [PASS] alpha\n  [FAIL] zeta\n" + wantHelpLine
 	if got != want {
-		t.Errorf("View normal mismatch: want %q, got %q", want, got)
+		t.Errorf("View gates list mismatch: want %q, got %q", want, got)
 	}
 	if strings.HasSuffix(got, "\n\n") {
 		t.Errorf("View should not end with double newline: %q", got)
+	}
+}
+
+// TestView_GatesList_IgnoresSummary: la vista de gates renderiza desde GateItems
+// y NO desde Summary (regression): aun con un Summary stale seteado, la salida
+// es la lista, sin que el string plano aparezca.
+func TestView_GatesList_IgnoresSummary(t *testing.T) {
+	items := []kdd.GateResult{{Name: "only", ExitCode: 0}}
+	got := View(Model{ViewMode: "gates", Summary: "STALE SUMMARY MUST NOT SHOW", GateItems: items, GatesSelectedIndex: 0})
+	want := "overall_ok=true pass=1 fail=0\n> [PASS] only\n" + wantHelpLine
+	if got != want {
+		t.Errorf("gates view should render GateItems not Summary: want %q, got %q", want, got)
+	}
+	if strings.Contains(got, "STALE SUMMARY") {
+		t.Errorf("Summary should not appear in gates view, got %q", got)
+	}
+}
+
+// TestView_GatesList_CursorAtBottom: cursor en la ultima fila de gates.
+func TestView_GatesList_CursorAtBottom(t *testing.T) {
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 1}}
+	got := View(Model{ViewMode: "gates", GateItems: items, GatesSelectedIndex: 1})
+	want := "overall_ok=false pass=1 fail=1\n  [PASS] a\n> [FAIL] b\n" + wantHelpLine
+	if got != want {
+		t.Errorf("gates cursor bottom mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_GatesList_Empty: lista de gates vacia (o nil) -> solo header
+// "overall_ok=true pass=0 fail=0" + "\n" + wantHelpLine (sin filas, sin cursor).
+func TestView_GatesList_Empty(t *testing.T) {
+	got := View(Model{ViewMode: "gates", GateItems: nil})
+	want := "overall_ok=true pass=0 fail=0\n" + wantHelpLine
+	if got != want {
+		t.Errorf("gates empty list mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_GatesList_DefaultViewModeIsGates: ViewMode en zero-value ("") renderea
+// la lista de gates igual que "gates" (usa GateItems, no Contracts).
+func TestView_GatesList_DefaultViewModeIsGates(t *testing.T) {
+	items := []kdd.GateResult{{Name: "only", ExitCode: 0}}
+	got := View(Model{ViewMode: "", GateItems: items, GatesSelectedIndex: 0})
+	want := "overall_ok=true pass=1 fail=0\n> [PASS] only\n" + wantHelpLine
+	if got != want {
+		t.Errorf("zero-value ViewMode should render gates list: want %q, got %q", want, got)
 	}
 }
 
@@ -1254,13 +1308,13 @@ func TestView_ScaffoldingPrecedenceOverDetail(t *testing.T) {
 
 // --- View: linea extra de ScaffoldMsg (solo en vista normal) ---
 
-// TestView_Normal_WithScaffoldMsg_AddsLine: en vista normal (no scaffolding, no
-// detalle), si ScaffoldMsg != "" se agrega una linea "\n" + ScaffoldMsg ANTES
-// de helpLine.
+// TestView_Normal_WithScaffoldMsg_AddsLine: en vista normal de gates (no
+// scaffolding, no detalle), si ScaffoldMsg != "" se agrega una linea "\n" +
+// ScaffoldMsg ANTES de helpLine. La lista se renderiza desde GateItems.
 func TestView_Normal_WithScaffoldMsg_AddsLine(t *testing.T) {
-	summary := "overall_ok=true pass=2 fail=0"
-	got := View(Model{Summary: summary, ScaffoldMsg: "creado: knowledge/contracts/foo.md"})
-	want := summary + "\n" + "\ncreado: knowledge/contracts/foo.md" + wantHelpLine
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 0}}
+	got := View(Model{ViewMode: "gates", GateItems: items, GatesSelectedIndex: 0, ScaffoldMsg: "creado: knowledge/contracts/foo.md"})
+	want := "overall_ok=true pass=2 fail=0\n> [PASS] a\n  [PASS] b" + "\n" + "\ncreado: knowledge/contracts/foo.md" + wantHelpLine
 	if got != want {
 		t.Errorf("want %q, got %q", want, got)
 	}
@@ -1289,13 +1343,347 @@ func TestView_Detail_WithScaffoldMsg_NoExtraLine(t *testing.T) {
 }
 
 // TestView_Normal_WithEmptyScaffoldMsg_NoExtraLine: con ScaffoldMsg vacio NO se
-// agrega nada: byte-identico al comportamiento previo a esta tarea (sin la
-// linea extra). Verifica que el layout no cambio para el caso comun.
+// agrega nada: la vista de gates es la lista renderizada desde GateItems + "\n"
+// + wantHelpLine, sin linea extra.
 func TestView_Normal_WithEmptyScaffoldMsg_NoExtraLine(t *testing.T) {
-	summary := "overall_ok=true pass=2 fail=0"
-	got := View(Model{Summary: summary, ScaffoldMsg: ""})
-	want := summary + "\n" + wantHelpLine
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 0}}
+	got := View(Model{ViewMode: "gates", GateItems: items, GatesSelectedIndex: 0, ScaffoldMsg: ""})
+	want := "overall_ok=true pass=2 fail=0\n> [PASS] a\n  [PASS] b" + "\n" + wantHelpLine
 	if got != want {
 		t.Errorf("want %q, got %q", want, got)
+	}
+}
+
+// --- UpdateModel: gatesLoadedMsg con items (nuevo) ---
+//
+// El handler ahora ADEMAS setea GateItems desde msg.items y clampea
+// GatesSelectedIndex si queda fuera de rango tras la carga (simetrico a
+// contractsLoadedMsg con SelectedIndex).
+
+// TestUpdateModel_GatesLoaded_SetsItems: el campo items del msg se copia a
+// GateItems tal cual (en el orden que los entrega ParseGatesResults, ya
+// alfabetico). GatesSelectedIndex en rango se preserva. Loading baja. cmd nil.
+func TestUpdateModel_GatesLoaded_SetsItems(t *testing.T) {
+	items := []kdd.GateResult{
+		{Name: "alpha", ExitCode: 0},
+		{Name: "zeta", ExitCode: 1},
+	}
+	m := Model{Loading: true, GatesSelectedIndex: 0}
+	got, cmd := UpdateModel(m, gatesLoadedMsg{summary: "overall_ok=false pass=1 fail=1", items: items, err: nil})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.Loading {
+		t.Errorf("Loading should be false")
+	}
+	if len(got.GateItems) != 2 {
+		t.Fatalf("GateItems len: want 2, got %d", len(got.GateItems))
+	}
+	if got.GateItems[0] != items[0] || got.GateItems[1] != items[1] {
+		t.Errorf("GateItems mismatch: got %+v", got.GateItems)
+	}
+	if got.GatesSelectedIndex != 0 {
+		t.Errorf("GatesSelectedIndex in-range should be preserved, got %d", got.GatesSelectedIndex)
+	}
+	if got.Summary != "overall_ok=false pass=1 fail=1" {
+		t.Errorf("Summary mismatch: %q", got.Summary)
+	}
+}
+
+// TestUpdateModel_GatesLoaded_ClampsGatesSelectedIndex: si la lista se achica y
+// GatesSelectedIndex queda > len-1, se clampea a len-1. cmd nil.
+func TestUpdateModel_GatesLoaded_ClampsGatesSelectedIndex(t *testing.T) {
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 0}}
+	m := Model{Loading: true, GatesSelectedIndex: 9}
+	got, _ := UpdateModel(m, gatesLoadedMsg{summary: "x", items: items, err: nil})
+	if got.GatesSelectedIndex != 1 {
+		t.Errorf("GatesSelectedIndex should clamp to len-1=1, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_GatesLoaded_EmptyItemsResetsGatesSelectedIndex: una lista
+// vacia clampea GatesSelectedIndex a 0 (no -1). cmd nil.
+func TestUpdateModel_GatesLoaded_EmptyItemsResetsGatesSelectedIndex(t *testing.T) {
+	m := Model{Loading: true, GatesSelectedIndex: 3}
+	got, _ := UpdateModel(m, gatesLoadedMsg{summary: "x", items: []kdd.GateResult{}, err: nil})
+	if got.GatesSelectedIndex != 0 {
+		t.Errorf("GatesSelectedIndex should be 0 for empty list, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_GatesLoaded_NilItemsResetsGatesSelectedIndex: items nil
+// tambien deja GatesSelectedIndex en 0.
+func TestUpdateModel_GatesLoaded_NilItemsResetsGatesSelectedIndex(t *testing.T) {
+	m := Model{Loading: true, GatesSelectedIndex: 2}
+	got, _ := UpdateModel(m, gatesLoadedMsg{summary: "x", items: nil, err: nil})
+	if got.GatesSelectedIndex != 0 {
+		t.Errorf("GatesSelectedIndex should be 0 for nil items, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// --- UpdateModel: gateDetailMsg (nuevo) ---
+//
+// gateDetailMsg setea los MISMOS campos genericos que contractDetailMsg
+// (Detail/DetailErr/DetailLoading); ViewingDetail YA era true desde el Enter.
+
+// TestUpdateModel_GateDetail_Success: un gateDetailMsg sin error setea Detail,
+// limpia DetailErr, baja DetailLoading. ViewingDetail se preserva (true).
+// GatesSelectedIndex se preserva. cmd nil.
+func TestUpdateModel_GateDetail_Success(t *testing.T) {
+	m := Model{ViewingDetail: true, DetailLoading: true, Detail: "", DetailErr: nil, GatesSelectedIndex: 1}
+	got, cmd := UpdateModel(m, gateDetailMsg{content: "exit_code=0\n--- stdout ---\nok\n--- stderr ---\n", err: nil})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.Detail != "exit_code=0\n--- stdout ---\nok\n--- stderr ---\n" {
+		t.Errorf("Detail mismatch: %q", got.Detail)
+	}
+	if got.DetailErr != nil {
+		t.Errorf("DetailErr should be nil, got %v", got.DetailErr)
+	}
+	if got.DetailLoading {
+		t.Errorf("DetailLoading should be false")
+	}
+	if !got.ViewingDetail {
+		t.Errorf("ViewingDetail should stay true")
+	}
+	if got.GatesSelectedIndex != 1 {
+		t.Errorf("GatesSelectedIndex should be preserved, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_GateDetail_Error: un gateDetailMsg con error setea DetailErr,
+// baja DetailLoading. ViewingDetail se preserva (sigue en detalle para mostrar
+// el error). cmd nil.
+func TestUpdateModel_GateDetail_Error(t *testing.T) {
+	m := Model{ViewingDetail: true, DetailLoading: true}
+	boom := errors.New("unknown gate: foo")
+	got, cmd := UpdateModel(m, gateDetailMsg{content: "", err: boom})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.DetailErr != boom {
+		t.Errorf("DetailErr mismatch: want %v, got %v", boom, got.DetailErr)
+	}
+	if got.DetailLoading {
+		t.Errorf("DetailLoading should be false")
+	}
+	if !got.ViewingDetail {
+		t.Errorf("ViewingDetail should stay true (show the error)")
+	}
+}
+
+// --- UpdateModel: navegacion de la lista de gates (nuevo) ---
+//
+// Flechas y Enter NAVEGAN la lista de gates cuando ViewMode == "gates" o "" (el
+// zero-value se trata como gates) Y !Scaffolding Y !ViewingDetail. Mueven
+// GatesSelectedIndex (SEPARADO de SelectedIndex de contracts). cmd nil.
+
+// TestUpdateModel_GatesKeyDown_Increments: flecha abajo en gates incrementa
+// GatesSelectedIndex. cmd nil.
+func TestUpdateModel_GatesKeyDown_Increments(t *testing.T) {
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 0}, {Name: "c", ExitCode: 1}}
+	m := Model{ViewMode: "gates", GateItems: items, GatesSelectedIndex: 1}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyDown})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.GatesSelectedIndex != 2 {
+		t.Errorf("GatesSelectedIndex should increment to 2, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_GatesKeyDown_ClampsAtBottom: flecha abajo en la ultima fila no
+// da la vuelta: GatesSelectedIndex se queda en len-1. cmd nil.
+func TestUpdateModel_GatesKeyDown_ClampsAtBottom(t *testing.T) {
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 0}, {Name: "c", ExitCode: 1}}
+	m := Model{ViewMode: "gates", GateItems: items, GatesSelectedIndex: 2}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyDown})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.GatesSelectedIndex != 2 {
+		t.Errorf("GatesSelectedIndex should clamp at len-1=2, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_GatesKeyDown_EmptyList_NoChange: flecha abajo con lista de
+// gates vacia no cambia GatesSelectedIndex (no lo lleva a -1) ni paniquea.
+func TestUpdateModel_GatesKeyDown_EmptyList_NoChange(t *testing.T) {
+	m := Model{ViewMode: "gates", GateItems: nil, GatesSelectedIndex: 0}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyDown})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.GatesSelectedIndex != 0 {
+		t.Errorf("GatesSelectedIndex should stay 0 on empty list, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_GatesKeyUp_Decrements: flecha arriba en gates decrementa
+// GatesSelectedIndex. cmd nil.
+func TestUpdateModel_GatesKeyUp_Decrements(t *testing.T) {
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 0}}
+	m := Model{ViewMode: "gates", GateItems: items, GatesSelectedIndex: 1}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyUp})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.GatesSelectedIndex != 0 {
+		t.Errorf("GatesSelectedIndex should decrement to 0, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_GatesKeyUp_ClampsAtTop: flecha arriba en la primera fila no
+// baja de 0 (no da la vuelta). cmd nil.
+func TestUpdateModel_GatesKeyUp_ClampsAtTop(t *testing.T) {
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 0}}
+	m := Model{ViewMode: "gates", GateItems: items, GatesSelectedIndex: 0}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyUp})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.GatesSelectedIndex != 0 {
+		t.Errorf("GatesSelectedIndex should clamp at 0, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_GatesArrows_WorkWithZeroViewMode: el zero-value de ViewMode
+// ("") se trata como gates: las flechas navegan GatesSelectedIndex.
+func TestUpdateModel_GatesArrows_WorkWithZeroViewMode(t *testing.T) {
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 0}}
+	m := Model{ViewMode: "", GateItems: items, GatesSelectedIndex: 0}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyDown})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.GatesSelectedIndex != 1 {
+		t.Errorf("zero-value ViewMode should navigate gates, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_GatesArrows_NoEffectOnContractsIndex: las flechas en gates view
+// mueven GatesSelectedIndex pero NO SelectedIndex (contracts): son dos cursores
+// separados, evita bugs de cursor cruzado al cambiar de panel.
+func TestUpdateModel_GatesArrows_NoEffectOnContractsIndex(t *testing.T) {
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 0}}
+	m := Model{ViewMode: "gates", GateItems: items, GatesSelectedIndex: 0, SelectedIndex: 0, ContractItems: []kdd.ContractStatus{{Task: "x", Lifecycle: "draft"}}}
+	got, _ := UpdateModel(m, tea.KeyMsg{Type: tea.KeyDown})
+	if got.SelectedIndex != 0 {
+		t.Errorf("contracts SelectedIndex should not move in gates view, got %d", got.SelectedIndex)
+	}
+	if got.GatesSelectedIndex != 1 {
+		t.Errorf("gates GatesSelectedIndex should move, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_ContractsArrows_NoEffectOnGatesIndex: viceversa — las flechas
+// en contracts view mueven SelectedIndex pero NO GatesSelectedIndex.
+func TestUpdateModel_ContractsArrows_NoEffectOnGatesIndex(t *testing.T) {
+	citems := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}}
+	m := Model{ViewMode: "contracts", ContractItems: citems, SelectedIndex: 0, GateItems: []kdd.GateResult{{Name: "g", ExitCode: 0}}, GatesSelectedIndex: 0}
+	got, _ := UpdateModel(m, tea.KeyMsg{Type: tea.KeyDown})
+	if got.GatesSelectedIndex != 0 {
+		t.Errorf("gates GatesSelectedIndex should not move in contracts view, got %d", got.GatesSelectedIndex)
+	}
+	if got.SelectedIndex != 1 {
+		t.Errorf("contracts SelectedIndex should move, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_GatesEnter_NonEmpty_EntersDetail: Enter con lista de gates no
+// vacia entra en ViewingDetail + DetailLoading, limpia Detail/DetailErr
+// (mismos campos genericos que el detalle de contrato). Preserva
+// GatesSelectedIndex. cmd nil (la funcion pura no shellea; el loadGateDetail
+// real lo dispara el wiring).
+func TestUpdateModel_GatesEnter_NonEmpty_EntersDetail(t *testing.T) {
+	items := []kdd.GateResult{{Name: "a", ExitCode: 0}, {Name: "b", ExitCode: 1}}
+	m := Model{ViewMode: "gates", GateItems: items, GatesSelectedIndex: 1, Detail: "stale", DetailErr: errors.New("stale")}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Errorf("expected nil cmd (pure UpdateModel does not shell out)")
+	}
+	if !got.ViewingDetail {
+		t.Errorf("ViewingDetail should be true")
+	}
+	if !got.DetailLoading {
+		t.Errorf("DetailLoading should be true")
+	}
+	if got.Detail != "" {
+		t.Errorf("Detail should be cleared, got %q", got.Detail)
+	}
+	if got.DetailErr != nil {
+		t.Errorf("DetailErr should be cleared, got %v", got.DetailErr)
+	}
+	if got.GatesSelectedIndex != 1 {
+		t.Errorf("GatesSelectedIndex should be preserved, got %d", got.GatesSelectedIndex)
+	}
+}
+
+// TestUpdateModel_GatesEnter_Empty_NoAction: Enter con lista de gates vacia no
+// hace nada (no entra en detalle, no paniquea). cmd nil.
+func TestUpdateModel_GatesEnter_Empty_NoAction(t *testing.T) {
+	m := Model{ViewMode: "gates", GateItems: nil, GatesSelectedIndex: 0}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.ViewingDetail {
+		t.Errorf("ViewingDetail should stay false on empty gates Enter")
+	}
+}
+
+// TestUpdateModel_GateDetail_Esc_ReturnsToList: Esc desde el detalle de un gate
+// (ViewMode gates) vuelve a la lista (ViewingDetail false, Detail/DetailErr
+// limpios) y PRESERVA GatesSelectedIndex y ViewMode. El detalle es generico:
+// funciona igual venga de un contrato o de un gate. cmd nil.
+func TestUpdateModel_GateDetail_Esc_ReturnsToList(t *testing.T) {
+	m := Model{ViewingDetail: true, Detail: "exit_code=0", DetailErr: errors.New("e"), GatesSelectedIndex: 1, ViewMode: "gates"}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.ViewingDetail {
+		t.Errorf("ViewingDetail should be false")
+	}
+	if got.Detail != "" {
+		t.Errorf("Detail should be cleared, got %q", got.Detail)
+	}
+	if got.DetailErr != nil {
+		t.Errorf("DetailErr should be cleared, got %v", got.DetailErr)
+	}
+	if got.GatesSelectedIndex != 1 {
+		t.Errorf("GatesSelectedIndex should be preserved (1), got %d", got.GatesSelectedIndex)
+	}
+	if got.ViewMode != "gates" {
+		t.Errorf("ViewMode should be preserved (gates), got %q", got.ViewMode)
+	}
+}
+
+// TestUpdateModel_GatesView_CommandKeysWork: las teclas de comando "r" y "n"
+// siguen funcionando en la vista de gates (caen al switch de comandos compartido
+// igual que antes). "r" refresca ambos paneles; "n" entra en scaffolding.
+func TestUpdateModel_GatesView_CommandKeysWork(t *testing.T) {
+	// "r" desde gates view (zero-value ViewMode) refresca ambos paneles y limpia
+	// errores viejos.
+	m := Model{ViewMode: "", Loading: false, ContractsLoading: false, Err: errors.New("e"), ContractsErr: errors.New("ce")}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if cmd != nil {
+		t.Errorf("expected nil cmd for r")
+	}
+	if !got.Loading || !got.ContractsLoading {
+		t.Errorf("both Loading flags should be true after refresh: %+v", got)
+	}
+	if got.Err != nil || got.ContractsErr != nil {
+		t.Errorf("errors should be cleared after refresh, got gates=%v contracts=%v", got.Err, got.ContractsErr)
+	}
+	// "n" desde gates view entra en scaffolding.
+	m2 := Model{ViewMode: "gates"}
+	got2, cmd2 := UpdateModel(m2, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	if cmd2 != nil {
+		t.Errorf("expected nil cmd for n")
+	}
+	if !got2.Scaffolding {
+		t.Errorf("Scaffolding should be true from gates view")
 	}
 }

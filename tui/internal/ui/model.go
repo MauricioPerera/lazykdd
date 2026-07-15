@@ -27,6 +27,16 @@ type Model struct {
 	Err error
 	// Loading es true hasta que llega el primer resultado de gates (gatesLoadedMsg).
 	Loading bool
+	// --- gates lista navegable (nuevo) ---
+	// GateItems es la lista estructurada (kdd.GateResult) que alimenta la lista
+	// navegable del panel de gates. Lo pobla gatesLoadedMsg (program.go llama a
+	// kdd.ParseGatesResults sobre el mismo stdout que Summarize).
+	GateItems []kdd.GateResult
+	// GatesSelectedIndex es el cursor (0-based) sobre GateItems. Lo clampea
+	// handleGatesLoaded si la lista se achica y queda fuera de rango. SEPARADO
+	// de SelectedIndex (contracts): son dos listas distintas, evita bugs de
+	// cursor cruzado al cambiar de panel con g/c.
+	GatesSelectedIndex int
 	// --- contracts ---
 	// Contracts es el string de kdd.SummarizeContractsStatus; vacio si no cargo.
 	// Se sigue poblando (program.go llama a SummarizeContractsStatus) para
@@ -78,9 +88,12 @@ type Model struct {
 }
 
 // gatesLoadedMsg es el mensaje propio que llega cuando termina de cargar el
-// resumen de gates (producido por el Init() del wrapper en program.go).
+// resumen de gates (producido por el Init() del wrapper en program.go). items es
+// la lista estructurada (kdd.ParseGatesResults sobre el mismo stdout que
+// summary); el TUI la usa para la lista navegable del panel de gates.
 type gatesLoadedMsg struct {
 	summary string
+	items   []kdd.GateResult
 	err     error
 }
 
@@ -100,6 +113,18 @@ type contractsLoadedMsg struct {
 // program.go, disparado por Enter sobre la lista de contratos). content es el
 // archivo completo; err es el error de os.ReadFile (ej. contrato inexistente).
 type contractDetailMsg struct {
+	content string
+	err     error
+}
+
+// gateDetailMsg es el mensaje propio que llega cuando termina de correr un gate
+// individual via `gates run <name> --json` (producido por loadGateDetail del
+// wrapper en program.go, disparado por Enter sobre la lista de gates). content
+// es el string formateado por kdd.SummarizeGateDetail (exit_code + stdout +
+// stderr); err es el error de arranque del proceso, de parseo, o el `"error"`
+// que devuelve el CLI (unknown gate, etc.). Usa los MISMOS campos genericos que
+// contractDetailMsg: el detalle es generico independientemente de su origen.
+type gateDetailMsg struct {
 	content string
 	err     error
 }
@@ -148,6 +173,8 @@ func UpdateModel(m Model, msg tea.Msg) (Model, tea.Cmd) {
 		return handleContractsLoaded(m, msg), nil
 	case contractDetailMsg:
 		return handleContractDetail(m, msg), nil
+	case gateDetailMsg:
+		return handleGateDetail(m, msg), nil
 	case scaffoldDoneMsg:
 		return handleScaffoldDone(m, msg), nil
 	case tea.KeyMsg:
@@ -157,12 +184,32 @@ func UpdateModel(m Model, msg tea.Msg) (Model, tea.Cmd) {
 	}
 }
 
-// handleGatesLoaded setea Summary/Err, baja Loading. El resto del Model se
-// preserva del entrante. Comportamiento historico, sin cambios.
+// handleGatesLoaded setea Summary/Err, baja Loading, y ADEMAS setea GateItems
+// desde msg.items. Clampea GatesSelectedIndex si quedo fuera de rango tras la
+// carga (ej. la lista se achico): a len(items)-1, o 0 si la lista quedo vacia.
+// El resto del Model (contracts, ViewMode, Quitting) se preserva.
 func handleGatesLoaded(m Model, msg gatesLoadedMsg) Model {
 	m.Summary = msg.summary
 	m.Err = msg.err
 	m.Loading = false
+	m.GateItems = msg.items
+	if len(m.GateItems) == 0 {
+		m.GatesSelectedIndex = 0
+	} else if m.GatesSelectedIndex > len(m.GateItems)-1 {
+		m.GatesSelectedIndex = len(m.GateItems) - 1
+	}
+	return m
+}
+
+// handleGateDetail setea Detail/DetailErr, baja DetailLoading. ViewingDetail YA
+// era true desde el Enter que abrio el detalle del gate; no se toca aca. Usa los
+// MISMOS campos genericos que handleContractDetail (Detail/DetailErr/
+// DetailLoading): el detalle es generico independientemente de si vino de un
+// contrato o de un gate.
+func handleGateDetail(m Model, msg gateDetailMsg) Model {
+	m.Detail = msg.content
+	m.DetailErr = msg.err
+	m.DetailLoading = false
 	return m
 }
 
@@ -235,11 +282,11 @@ func handleDetailKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 // handleListKey maneja las teclas en modo lista/normal (no scaffolding, no
-// detalle). Las flechas y Enter NAVEGAN la lista SOLO cuando ViewMode ==
-// "contracts"; las teclas de comando ("q"/"ctrl+c"/"g"/"c"/"r"/"n") funcionan
-// en AMBAS vistas (gates y contracts) igual que antes - esta tarea no les
-// cambia el comportamiento, solo agrega flechas + Enter en la lista de
-// contracts.
+// detalle). Las flechas y Enter NAVEGAN la lista de contracts cuando ViewMode
+// == "contracts", y la lista de gates cuando ViewMode == "gates" o "" (zero-
+// value, default); las teclas de comando ("q"/"ctrl+c"/"g"/"c"/"r"/"n") funcionan
+// en AMBAS vistas igual que antes - esta tarea no les cambia el comportamiento,
+// solo agrega flechas + Enter en la lista de gates (simetrico a contracts).
 func handleListKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.ViewMode == "contracts" {
 		switch msg.Type {
@@ -255,6 +302,28 @@ func handleListKey(m Model, msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyEnter:
 			if len(m.ContractItems) > 0 {
+				m.ViewingDetail = true
+				m.DetailLoading = true
+				m.Detail = ""
+				m.DetailErr = nil
+			}
+			return m, nil
+		}
+	}
+	if m.ViewMode == "gates" || m.ViewMode == "" {
+		switch msg.Type {
+		case tea.KeyUp:
+			if m.GatesSelectedIndex > 0 {
+				m.GatesSelectedIndex--
+			}
+			return m, nil
+		case tea.KeyDown:
+			if len(m.GateItems) > 0 && m.GatesSelectedIndex < len(m.GateItems)-1 {
+				m.GatesSelectedIndex++
+			}
+			return m, nil
+		case tea.KeyEnter:
+			if len(m.GateItems) > 0 {
 				m.ViewingDetail = true
 				m.DetailLoading = true
 				m.Detail = ""
@@ -357,14 +426,49 @@ func renderContractList(m Model) string {
 	return sb.String()
 }
 
+// renderGateList arma el cuerpo de la vista de gates desde GateItems con un
+// indicador de cursor en la fila GatesSelectedIndex: "> " en la fila
+// seleccionada, "  " en las demas. Empieza con el header "overall_ok=<bool>
+// pass=<N> fail=<M>" (mismo formato que kdd.Summarize, para familiaridad;
+// overall_ok se deriva como fail==0, pass/fail se cuentan de GateItems) seguido
+// de una linea por item "[PASS] <name>" / "[FAIL] <name>" segun ExitCode == 0,
+// con su prefijo de cursor. Las lineas se unen con '\n' SIN trailing newline
+// (View lo agrega). Pura, sin I/O.
+func renderGateList(m Model) string {
+	pass, fail := 0, 0
+	for _, it := range m.GateItems {
+		if it.ExitCode == 0 {
+			pass++
+		} else {
+			fail++
+		}
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "overall_ok=%v pass=%d fail=%d", fail == 0, pass, fail)
+	for i, it := range m.GateItems {
+		marker := "[FAIL]"
+		if it.ExitCode == 0 {
+			marker = "[PASS]"
+		}
+		if i == m.GatesSelectedIndex {
+			fmt.Fprintf(&sb, "\n> %s %s", marker, it.Name)
+		} else {
+			fmt.Fprintf(&sb, "\n  %s %s", marker, it.Name)
+		}
+	}
+	return sb.String()
+}
+
 // View renderiza la Model a un string. Pura, sin I/O. Precedencia (de mayor a
 // menor): Quitting (devuelve "") > Scaffolding (prompt propio) > ViewingDetail
-// (vista de detalle, propia) > vista normal (gates/contracts segun ViewMode,
-// con helpLine). En la vista normal de contracts se RENDERIZA la lista desde
-// ContractItems con cursor (no el string plano Contracts); mantiene la
-// precedencia error > loading > lista que ya existia (usa ContractsErr /
-// ContractsLoading). Si ScaffoldMsg != "" se agrega una linea extra antes de
-// helpLine (solo en vista normal, no en detalle).
+// (vista de detalle, propia, generica) > vista normal (gates/contracts segun
+// ViewMode, con helpLine). En la vista normal de contracts se RENDERIZA la
+// lista desde ContractItems con cursor (no el string plano Contracts); en la
+// vista normal de gates se RENDERIZA la lista desde GateItems con cursor (no el
+// string plano Summary). Ambas mantienen la precedencia error > loading > lista
+// que ya existia (usa Err/Loading para gates, ContractsErr/ContractsLoading para
+// contracts). Si ScaffoldMsg != "" se agrega una linea extra antes de helpLine
+// (solo en vista normal, no en detalle).
 func View(m Model) string {
 	if m.Quitting {
 		return ""
@@ -394,7 +498,7 @@ func View(m Model) string {
 		case m.Loading:
 			body = "cargando gates...\n"
 		default:
-			body = m.Summary + "\n"
+			body = renderGateList(m) + "\n"
 		}
 	}
 	if m.ScaffoldMsg != "" {

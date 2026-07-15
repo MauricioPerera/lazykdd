@@ -44,7 +44,15 @@ func (p program) Init() tea.Cmd {
 }
 
 // loadGates shellea `gates run-all --json` y devuelve un gatesLoadedMsg con el
-// resumen (o el error de arranque del proceso).
+// resumen Y la lista estructurada (items) - o el error de arranque del proceso.
+// Llama a AMBAS kdd.Summarize (-> summary, string plano que conserva el campo
+// Summary) y kdd.ParseGatesResults (-> items, []GateResult que alimenta la lista
+// navegable) sobre el MISMO stdout capturado: dos parses del mismo JSON es
+// barato y mantiene cada funcion enfocada (mismo patron que loadContracts). Como
+// ambas parsean el mismo JSON valido, deberian estar de acuerdo en ok/error; si
+// una da error y la otra no (no deberia pasar), se propaga el error no-nil. Un
+// *exec.ExitError (overall_ok=false) NO es error de shell-out (se conserva
+// stdout y se parsea igual).
 func (p program) loadGates() tea.Cmd {
 	return func() tea.Msg {
 		cmd := exec.Command("python", "scripts/kdd_cli.py", "gates", "run-all", "--json")
@@ -53,11 +61,41 @@ func (p program) loadGates() tea.Cmd {
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			if _, ok := err.(*exec.ExitError); !ok {
-				return gatesLoadedMsg{summary: "", err: err}
+				return gatesLoadedMsg{summary: "", items: nil, err: err}
 			}
 		}
-		summary, err := kdd.Summarize(stdout.Bytes())
-		return gatesLoadedMsg{summary: summary, err: err}
+		summary, errS := kdd.Summarize(stdout.Bytes())
+		_, items, errP := kdd.ParseGatesResults(stdout.Bytes())
+		err := errS
+		if err == nil {
+			err = errP
+		}
+		return gatesLoadedMsg{summary: summary, items: items, err: err}
+	}
+}
+
+// loadGateDetail shellea `gates run <name> --json` (UN gate individual) y
+// devuelve un gateDetailMsg con el contenido formateado (o el error). Mismo
+// patron os/exec que loadGates/loadContracts/loadScaffold. El CLI devuelve
+// exit 0/1 con {"exit_code":int,"stdout":string,"stderr":string} (gate valido) o
+// exit 1 con {"error":string} (gate invalido); en ambos caminos se conserva
+// stdout, asi que un *exec.ExitError NO es error de shell-out (se parsea stdout
+// igual). El stdout se resume con kdd.SummarizeGateDetail (funcion pura): forma
+// de error -> err, forma exit_code -> string legible. Lo dispara el wiring en
+// Update al ver Enter sobre la lista de gates.
+func (p program) loadGateDetail(name string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("python", "scripts/kdd_cli.py", "gates", "run", name, "--json")
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			if _, ok := err.(*exec.ExitError); !ok {
+				return gateDetailMsg{content: "", err: err}
+			}
+		}
+		content, err := kdd.SummarizeGateDetail(stdout.Bytes())
+		return gateDetailMsg{content: content, err: err}
 	}
 }
 
@@ -151,7 +189,7 @@ func (p program) loadScaffold(name string) tea.Cmd {
 }
 
 // Update delega a la logica pura UpdateModel y envuelve la nueva Model de
-// vuelta en el wrapper tea.Model. Despues de delegar, el wiring detecta TRES
+// vuelta en el wrapper tea.Model. Despues de delegar, el wiring detecta CUATRO
 // casos puntuales mirando el msg Y el Model ENTRANTE (antes de la delegacion):
 //
 //  1. Enter que confirma el input (scaffolding): si msg es tea.KeyMsg con
@@ -172,7 +210,18 @@ func (p program) loadScaffold(name string) tea.Cmd {
 //     devolvio se reemplaza por el loadDetail real. Un Enter con lista vacia
 //     NO dispara nada (UpdateModel tampoco hace nada en ese caso).
 //
-//  3. "r" (refresh): si msg es tea.KeyMsg con String() == "r" Y el Model
+//  3. Enter que corre un gate individual (lista navegable de gates): si msg es
+//     tea.KeyMsg con Type == KeyEnter Y el Model entrante NO estaba
+//     scaffolding NI viewingDetail Y tenia ViewMode == "gates" o "" (zero-value
+//     == gates) Y len(GateItems) > 0, el tea.Cmd es
+//     loadGateDetail(GateItems[GatesSelectedIndex].Name) (usa el cursor del
+//     Model ENTRANTE). Mutuamente excluyente con el caso 2 por el ViewMode
+//     ("contracts" vs "gates"/""). UpdateModel ya puso ViewingDetail/
+//     DetailLoading en true (mismos campos genericos que el detalle de
+//     contrato); el cmd nil que devolvio se reemplaza por el loadGateDetail
+//     real. Un Enter con GateItems vacia NO dispara nada.
+//
+//  4. "r" (refresh): si msg es tea.KeyMsg con String() == "r" Y el Model
 //     entrante NO estaba en scaffolding (en modo input "r" es texto, no
 //     comando), el tea.Cmd es tea.Batch(loadGates, loadContracts) (mismo patron
 //     que Init). UpdateModel ya reseteo Loading/ContractsLoading y limpio
@@ -195,6 +244,8 @@ func (p program) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	inViewMode := p.Model.ViewMode
 	inItems := p.Model.ContractItems
 	inSelected := p.Model.SelectedIndex
+	inGateItems := p.Model.GateItems
+	inGatesSelected := p.Model.GatesSelectedIndex
 	newModel, cmd := UpdateModel(p.Model, msg)
 	next := program{Model: newModel}
 	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter && wasScaffolding && input != "" {
@@ -202,6 +253,9 @@ func (p program) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter && !wasScaffolding && !wasViewingDetail && inViewMode == "contracts" && len(inItems) > 0 {
 		return next, next.loadDetail(inItems[inSelected].Task)
+	}
+	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter && !wasScaffolding && !wasViewingDetail && (inViewMode == "gates" || inViewMode == "") && len(inGateItems) > 0 {
+		return next, next.loadGateDetail(inGateItems[inGatesSelected].Name)
 	}
 	if key, ok := msg.(tea.KeyMsg); ok && !wasScaffolding && key.String() == "r" {
 		return next, tea.Batch(next.loadGates(), next.loadContracts())
