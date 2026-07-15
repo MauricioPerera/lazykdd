@@ -9,9 +9,14 @@ intent: "Instanciar la plantilla KDD en un proyecto real eliminando los ejemplos
 target: scripts/init_project.py
 signature: "def init_project(repo_dir: str, apply: bool, name: str) -> dict:"
 test_command: "python -m unittest tests/test_init_project.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 10
   max_nesting_depth: 4
+  cyclomatic_max: 7
+  nesting_max: 3
+  params_max: 4
+  lines_max: 30
 tests: "tests/test_init_project.py"
 tests_sha256: "c94dd16dc7786d27d37c8215e0aa8f613fc681b6dbe9df55a3fab17a95a9591f"
 touch_only: ['scripts/init_project.py']

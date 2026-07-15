@@ -9,9 +9,14 @@ intent: "Validar la estructura de un diagrama Mermaid (flowchart, gantt, pie o j
 target: scripts/validate_diagrams.py
 signature: "def validate_diagram(mmd_path, contract_path) -> list"
 test_command: "python -m unittest tests/test_validate_diagrams.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 14
   max_nesting_depth: 4
+  cyclomatic_max: 12
+  nesting_max: 3
+  params_max: 3
+  lines_max: 70
 tests: "tests/test_validate_diagrams.py"
 tests_sha256: "e0ef690cc83b80f9192b6d500c86962d3d88ebf138bbf1a4d696bb7abdeb90a9"
 touch_only: ['scripts/validate_diagrams.py']

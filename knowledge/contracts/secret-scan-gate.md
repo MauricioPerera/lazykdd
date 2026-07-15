@@ -9,9 +9,14 @@ intent: "Detectar credenciales filtradas (prefijos de proveedores conocidos + bl
 target: scripts/scan_secrets.py
 signature: "def scan_directory(directory, extensions=('.py','.js','.ts','.md','.json')) -> list"
 test_command: "python -m unittest tests/test_scan_secrets.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 12
   max_nesting_depth: 3
+  cyclomatic_max: 11
+  nesting_max: 4
+  params_max: 3
+  lines_max: 21
 tests: "tests/test_scan_secrets.py"
 tests_sha256: "80f2f34e67ada579b5f3a2fe023bf34b1f0ba19e1044945085f2a10174dd3dc7"
 touch_only: ['scripts/scan_secrets.py']

@@ -5,13 +5,15 @@ description: 'Ensamblador determinista de contexto presupuestado sobre la KB OKF
 tags: ['ccdd', 'context', 'okf', 'assembler']
 
 task: assemble-context
-intent: "Ensamblar contexto presupuestado y determinista desde la KB OKF según un contrato JSON de slots."
+intent: "Ensamblar, de forma determinista, contexto presupuestado desde la KB OKF según un contrato JSON de slots."
 target: scripts/assemble_context.py
 signature: "def assemble(contract: dict, task: str, base_dir: str) -> dict:"
 test_command: "python -m unittest tests/test_assemble_context.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 10
   max_nesting_depth: 4
+  params_max: 4
 tests: "tests/test_assemble_context.py"
 tests_sha256: "1a9f103cc9ad634ca5df39e3573fc617612bd7fbfac3d7df03856e8825dd4801"
 touch_only: ['scripts/assemble_context.py']

@@ -5,13 +5,15 @@ description: 'Checker determinista que evalua un record contra un rule-set decla
 tags: ['ccdd', 'rule-contract', 'reglas', 'declarativo']
 
 task: validate-rules
-intent: "Evaluar un record contra un rule-set declarativo y devolver las violaciones de forma determinista."
+intent: "Evaluar deterministicamente un record contra un rule-set declarativo, devolviendo sus violaciones."
 target: scripts/rule_engine.py
 signature: "def evaluate(ruleset: dict, record: dict, refs: dict) -> list:"
 test_command: "python -m unittest tests/test_rule_engine.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 10
   max_nesting_depth: 4
+  params_max: 4
 tests: "tests/test_rule_engine.py"
 tests_sha256: "154fb9f6e2645161930fb03728dedc5dde422d6aa3e55ac7a39a889cccc1c319"
 touch_only: ['scripts/rule_engine.py', 'scripts/validate_rules.py']

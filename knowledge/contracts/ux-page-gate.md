@@ -9,9 +9,14 @@ intent: "Validar propiedades mecanicas de UX/accesibilidad de una pagina HTML, d
 target: scripts/validate_ux_page.py
 signature: "def validate_ux_page(html_path) -> list"
 test_command: "python -m unittest tests/test_validate_ux_page.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 12
   max_nesting_depth: 4
+  cyclomatic_max: 5
+  nesting_max: 3
+  params_max: 2
+  lines_max: 36
 tests: "tests/test_validate_ux_page.py"
 tests_sha256: "aa4929a4072402f668b3a08286c8008c04d39ca1a477452a9b208cf1a0712f8b"
 touch_only: ['scripts/validate_ux_page.py']

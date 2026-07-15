@@ -5,13 +5,18 @@ description: 'Verifica un envelope mini-YAML al tope de cada .agents/logs/<task>
 tags: ['ccdd', 'gate', 'infra', 'trazabilidad']
 
 task: attestation-gate
-intent: "Verificar que cada .agents/logs/<task>-REPORT.md tenga un envelope de atestacion completo, con hashes que recomputados coincidan con el output pegado y con el contrato verificado."
+intent: "Verificar que cada .agents/logs/<task>-REPORT.md tenga un envelope de atestacion cuyos hashes recomputados coincidan con el output pegado, con el contrato verificado."
 target: scripts/validate_attestation.py
 signature: "def validate_directory(logs_dir, repo_root='.') -> list"
 test_command: "python -m unittest tests/test_validate_attestation.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 16
   max_nesting_depth: 4
+  cyclomatic_max: 8
+  nesting_max: 3
+  params_max: 3
+  lines_max: 24
 tests: "tests/test_validate_attestation.py"
 tests_sha256: "8475da23657481fafba463b530ad6f1c633de1b4d73e0d876322d0f5d00afb37"
 touch_only: ['scripts/validate_attestation.py']

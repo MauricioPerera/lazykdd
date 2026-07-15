@@ -5,13 +5,18 @@ description: 'Test de coherencia que fija el versionado de la plantilla: CHANGEL
 tags: ['versionado', 'changelog', 'upgrade', 'coherencia', 'tooling']
 
 task: versioning-plantilla
-intent: "Fijar por test de coherencia el versionado de la plantilla: CHANGELOG, README y nodo de upgrade no pueden desincronizarse."
+intent: "Fijar por test de coherencia el versionado de la plantilla: CHANGELOG, README, nodo de upgrade no pueden desincronizarse."
 target: tests/test_versioning.py
 signature: "def test_changelog_first_entry_is_semver(self) -> None:"
 test_command: "python -m unittest tests/test_versioning.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 5
   max_nesting_depth: 3
+  cyclomatic_max: 5
+  nesting_max: 3
+  params_max: 2
+  lines_max: 34
 tests: "tests/test_versioning.py"
 tests_sha256: "0115ea5cd92b787cdc46f2e4717fe1d6f582fca711579d0ff2125b0416bae9e2"
 touch_only: ['tests/test_versioning.py']

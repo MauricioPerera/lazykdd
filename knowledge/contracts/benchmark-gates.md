@@ -5,13 +5,17 @@ description: 'Mide los 9 gates de nivel 1 y la suite de tests con logica de orqu
 tags: ['ccdd', 'benchmark', 'mantenimiento', 'infra']
 
 task: benchmark-gates
-intent: "Medir el tiempo de los 9 gates de nivel 1 y la suite, con orquestacion pura y testeable por inyeccion de dependencias."
+intent: "Medir el tiempo de los 9 gates de nivel 1 más la suite, con orquestacion pura, testeable por inyeccion de dependencias."
 target: scripts/benchmark_gates.py
 signature: "def benchmark_gates(gates, suite_cmd, repo_root, run_fn, timer_fn, reps=3, warmup=1, suite_passes=2) -> dict"
 test_command: "python -m unittest tests/test_benchmark_gates.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 10
   max_nesting_depth: 4
+  cyclomatic_max: 4
+  nesting_max: 2
+  lines_max: 20
 tests: "tests/test_benchmark_gates.py"
 tests_sha256: "4adfc1788d3fd885fdd9a3edb1ab9b5676d4a3eee827ea74c49b4c1fbcd9dda7"
 touch_only: ['scripts/benchmark_gates.py']

@@ -5,13 +5,18 @@ description: 'Logica pura (stdlib, sin el SDK mcp) que sabe que script scripts/*
 tags: ['ccdd', 'gate', 'infra', 'mcp']
 
 task: mcp-gate-dispatch
-intent: "Mapear cada gate de KDD a su script y argv, y ejecutarlo via subprocess, sin depender del SDK mcp."
+intent: "Mapear cada gate de KDD a su script/argv, ejecutandolo via subprocess, sin depender del SDK mcp."
 target: scripts/mcp_gate_dispatch.py
 signature: "def run_gate(tool_name, params, repo_root='.', timeout=120) -> dict"
 test_command: "python -m unittest tests/test_mcp_gate_dispatch.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 14
   max_nesting_depth: 4
+  cyclomatic_max: 4
+  nesting_max: 2
+  params_max: 5
+  lines_max: 30
 tests: "tests/test_mcp_gate_dispatch.py"
 tests_sha256: "a5a3fd5f39f16074e884f563283a4d2981e11cfc6317e2a58d4d18f4689ca945"
 touch_only: ['scripts/mcp_gate_dispatch.py']

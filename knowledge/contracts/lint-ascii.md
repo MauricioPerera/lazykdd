@@ -9,9 +9,14 @@ intent: "Convertir la convencion ASCII de los mensajes de scripts en un gate det
 target: scripts/lint_ascii.py
 signature: "def lint_ascii(scripts_dir: str) -> list:"
 test_command: "python -m unittest tests/test_lint_ascii.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 10
   max_nesting_depth: 4
+  cyclomatic_max: 3
+  nesting_max: 1
+  params_max: 2
+  lines_max: 11
 tests: "tests/test_lint_ascii.py"
 tests_sha256: "bf7921b3b7f9fa2dd0b8a4e284e2125b080426e69eeca58ee72f9ef82e6381a4"
 touch_only: ['scripts/lint_ascii.py']
