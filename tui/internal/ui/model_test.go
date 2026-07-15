@@ -14,7 +14,7 @@ import (
 // model.go, este test lo pega y falla, que es justo lo que debe hacer un
 // oraculo congelado. El const del paquete (helpLine en model.go) NO se usa
 // desde los tests; estos referencian solo a wantHelpLine.
-const wantHelpLine = "\n[g]ates [c]ontracts [q]uit"
+const wantHelpLine = "\n[g]ates [c]ontracts [r]efresh [q]uit"
 
 // --- UpdateModel: gatesLoadedMsg (comportamiento historico, sin cambios) ---
 
@@ -61,7 +61,7 @@ func TestUpdateModel_GatesLoadedError(t *testing.T) {
 	}
 }
 
-// --- UpdateModel: contractsLoadedMsg (nuevo) ---
+// --- UpdateModel: contractsLoadedMsg (comportamiento historico, sin cambios) ---
 
 // TestUpdateModel_ContractsLoadedSuccess: un contractsLoadedMsg exitoso setea
 // Contracts, limpia ContractsErr, baja ContractsLoading y NO pide comandos.
@@ -113,7 +113,7 @@ func TestUpdateModel_ContractsLoadedError(t *testing.T) {
 	}
 }
 
-// --- UpdateModel: keys (quit + nuevas teclas de vista) ---
+// --- UpdateModel: keys (quit + teclas de vista + refresh) ---
 
 // TestUpdateModel_KeyQ_Quits: la tecla "q" pone Quitting en true y devuelve
 // tea.Quit como cmd (cmd() produce un tea.QuitMsg).
@@ -178,7 +178,92 @@ func TestUpdateModel_KeyC_SetsContracts(t *testing.T) {
 	}
 }
 
-// TestUpdateModel_OtherKey_NoChange: una tecla que no es "q"/"ctrl+c"/"g"/"c"
+// TestUpdateModel_KeyR_Refreshes: la tecla "r" vuelve AMBOS paneles a estado
+// "cargando" (Loading y ContractsLoading en true), LIMPIA los errores viejos
+// (Err y ContractsErr a nil incluso si tenian un error previo -- un refresco no
+// debe seguir mostrando el error de la carga anterior mientras espera el nuevo),
+// preserva Summary/Contracts/ViewMode/Quitting sin cambios y devuelve cmd nil.
+// La funcion pura NO sabe shellear: el refresh real (el tea.Batch de
+// loadGates/loadContracts) lo dispara el wiring en program.Update, no aca. Si
+// Loading pasa a true, View ya muestra "cargando..." por la precedencia EXISTENTE
+// (loading > resumen) -- UpdateModel no duplica esa logica.
+func TestUpdateModel_KeyR_Refreshes(t *testing.T) {
+	m := Model{
+		Summary:          "old gates",
+		Err:              errors.New("old gates err"),
+		Loading:          false,
+		Contracts:        "old contracts",
+		ContractsErr:     errors.New("old contracts err"),
+		ContractsLoading: false,
+		ViewMode:         "contracts",
+		Quitting:         false,
+	}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if cmd != nil {
+		t.Errorf("expected nil cmd for r (pure UpdateModel does not shell out)")
+	}
+	if !got.Loading {
+		t.Errorf("Loading should be true after refresh")
+	}
+	if !got.ContractsLoading {
+		t.Errorf("ContractsLoading should be true after refresh")
+	}
+	if got.Err != nil {
+		t.Errorf("Err should be cleared to nil after refresh, got %v", got.Err)
+	}
+	if got.ContractsErr != nil {
+		t.Errorf("ContractsErr should be cleared to nil after refresh, got %v", got.ContractsErr)
+	}
+	if got.Summary != "old gates" {
+		t.Errorf("Summary should be unchanged after refresh, got %q", got.Summary)
+	}
+	if got.Contracts != "old contracts" {
+		t.Errorf("Contracts should be unchanged after refresh, got %q", got.Contracts)
+	}
+	if got.ViewMode != "contracts" {
+		t.Errorf("ViewMode should be unchanged (contracts) after refresh, got %q", got.ViewMode)
+	}
+	if got.Quitting {
+		t.Errorf("Quitting should be unchanged (false) after refresh")
+	}
+}
+
+// TestUpdateModel_KeyR_RefreshesFromCleanState: un refresco desde un estado
+// limpio (sin errores, ambos paneles cargados) igual vuelve a "cargando" y
+// preserva los resumenes visibles hasta que lleguen los nuevos.
+func TestUpdateModel_KeyR_RefreshesFromCleanState(t *testing.T) {
+	m := Model{
+		Summary:          "overall_ok=true pass=2 fail=0",
+		Err:              nil,
+		Loading:          false,
+		Contracts:        "contracts=2",
+		ContractsErr:     nil,
+		ContractsLoading: false,
+		ViewMode:         "gates",
+		Quitting:         false,
+	}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if cmd != nil {
+		t.Errorf("expected nil cmd for r")
+	}
+	if !got.Loading || !got.ContractsLoading {
+		t.Errorf("both Loading flags should be true after refresh: %+v", got)
+	}
+	if got.Err != nil || got.ContractsErr != nil {
+		t.Errorf("no errors to clear, but got gates=%v contracts=%v", got.Err, got.ContractsErr)
+	}
+	if got.Summary != "overall_ok=true pass=2 fail=0" {
+		t.Errorf("Summary should be preserved, got %q", got.Summary)
+	}
+	if got.Contracts != "contracts=2" {
+		t.Errorf("Contracts should be preserved, got %q", got.Contracts)
+	}
+	if got.ViewMode != "gates" || got.Quitting {
+		t.Errorf("ViewMode/Quitting should be unchanged: %+v", got)
+	}
+}
+
+// TestUpdateModel_OtherKey_NoChange: una tecla que no es "q"/"ctrl+c"/"g"/"c"/"r"
 // no cambia el model ni pide comandos (incluido ViewMode).
 func TestUpdateModel_OtherKey_NoChange(t *testing.T) {
 	m := Model{Summary: "s", Err: nil, Loading: true, Quitting: false, ViewMode: "contracts"}
@@ -290,7 +375,7 @@ func TestView_DefaultViewModeIsGates(t *testing.T) {
 	}
 }
 
-// --- View: vista de contracts (nueva) ---
+// --- View: vista de contracts ---
 
 // TestView_ContractsError: en ViewMode contracts, error > loading > resumen:
 // "error: <err>\n" + wantHelpLine.

@@ -5,7 +5,7 @@ description: 'Capa interactiva de la Piel 3: un programa Bubble Tea (arquitectur
 tags: ['ccdd', 'tui', 'lazykdd', 'go']
 
 task: tui-bubbletea-model
-intent: "Gobernar la transicion de estado del TUI (gates + contracts) con una funcion UpdateModel pura."
+intent: "Gobernar la transicion de estado del TUI (gates + contracts + refresh) con una funcion UpdateModel pura."
 language: go
 target: tui/internal/ui/model.go
 signature: "func UpdateModel(m Model, msg tea.Msg) (Model, tea.Cmd)"
@@ -15,9 +15,9 @@ budget:
   cyclomatic_max: 9
   nesting_max: 3
   params_max: 2
-  lines_max: 45
+  lines_max: 50
 tests: "tui/internal/ui/model_test.go"
-tests_sha256: "424fa5d1fe967e4d332b2bc125cbf8bb55c345a5bb3d01163a1961982eaecc45"
+tests_sha256: "9f0a7ef906baff2cf683bd35ae0b25117dc57f32f8088dc58881c215c15e7b4a"
 touch_only: ['tui/internal/ui/model.go', 'tui/internal/ui/program.go', 'tui/internal/ui/pipe_test.go', 'tui/main.go', 'tui/go.mod', 'tui/go.sum']
 deps_allowed: ['github.com/charmbracelet/bubbletea']
 forbids: ['network', 'llm']
@@ -32,16 +32,17 @@ Capa INTERACTIVA de la Piel 3 de lazykdd: un programa Bubble Tea
 existente ([tui-gates-summarize](./tui-gates-summarize.md) Y la nueva
 [kdd-contracts-status-summarize](./kdd-contracts-status-summarize.md)), muestra
 el resumen de gates O de contratos (el usuario alterna con `g`/`c`) y sale con
-'q' o Ctrl+C. La funcion que gobierna este contrato es `UpdateModel(m Model,
+'q' o Ctrl+C, y recarga ambos paneles con 'r' (refresh) sin reiniciar el
+programa. La funcion que gobierna este contrato es `UpdateModel(m Model,
 msg tea.Msg) (Model, tea.Cmd)`: PURA (sin I/O, sin red, sin goroutines, sin
 llamar a Bubble Tea real mas alla de sus TIPOS), separada del wiring de I/O
 real (el wrapper `tea.Model` en `program.go`, glue, no testeado, mismo criterio
 que `main.go`). `View(m Model) string` tambien es pura y esta cubierta por el
 mismo oraculo congelado, pero NO es el target principal del gate de
 complejidad (ver seccion Do/Don't: decision de un solo contrato). Esta
-actualizacion EXTIENDE el comportamiento previo (un solo screen de gates) con
-un segundo panel de contratos; la `signature` de `UpdateModel` NO cambio
-(sigue siendo `(m Model, msg tea.Msg) (Model, tea.Cmd)`).
+actualizacion EXTIENDE el comportamiento previo (gates + contracts) con una
+tecla de refresh 'r' que recarga ambos paneles; la `signature` de `UpdateModel`
+NO cambio (sigue siendo `(m Model, msg tea.Msg) (Model, tea.Cmd)`).
 
 ## Interface
 ```go
@@ -89,6 +90,17 @@ hacer). Comportamiento:
   `ViewMode: "gates"`, resto sin cambios, `tea.Cmd` nil.
 - `msg` es `tea.KeyMsg` y `msg.String()` es `"c"`: devuelve `m` con
   `ViewMode: "contracts"`, resto sin cambios, `tea.Cmd` nil.
+- `msg` es `tea.KeyMsg` y `msg.String()` es `"r"` (refresh): devuelve `m`
+  con `Loading: true` y `ContractsLoading: true` (ambos paneles vuelven a
+  "cargando"), `Err: nil` y `ContractsErr: nil` (limpia los errores viejos
+  -- un refresco no debe seguir mostrando el error de la carga anterior
+  mientras espera el resultado nuevo), el resto (`Summary`/`Contracts`/
+  `ViewMode`/`Quitting`) SIN CAMBIOS, `tea.Cmd` nil. La funcion pura NO
+  sabe shellear: el refresh real (`tea.Batch` de `loadGates`/`loadContracts`)
+  lo dispara el wiring en `program.Update` al ver esta misma tecla; `UpdateModel`
+  no lo reproduce. Si `Loading` pasa a `true`, `View` ya muestra "cargando..."
+  en vez del resumen viejo por la precedencia EXISTENTE (loading > resumen) --
+  eso es intencional, `UpdateModel` no duplica esa logica.
 - Cualquier otro `msg` (otras teclas, `tea.WindowSizeMsg`, lo que sea):
   devuelve `m` SIN CAMBIOS, `tea.Cmd` nil.
 - Nunca panic con ningun `tea.Msg`, tipado o no (type switch con default, sin
@@ -110,8 +122,8 @@ linea de ayuda al final:
     gates...\n"`; si no, `Summary + "\n"` (`kdd.Summarize` NO trae trailing
     newline por diseno, asi que `View` es quien lo agrega).
 - Al cuerpo se le agrega SIEMPRE al final la linea de ayuda EXACTA:
-  `"\n[g]ates [c]ontracts [q]uit"` (un `\n` + el literal). El resultado es
-  `<cuerpo>` + `"\n[g]ates [c]ontracts [q]uit"`.
+  `"\n[g]ates [c]ontracts [r]efresh [q]uit"` (un `\n` + el literal). El resultado es
+  `<cuerpo>` + `"\n[g]ates [c]ontracts [r]efresh [q]uit"`.
 
 ## Invariants
 - `UpdateModel` es PURA: sin I/O, sin red, sin goroutines, sin `os/exec`, sin
@@ -124,7 +136,12 @@ linea de ayuda al final:
   `Contracts`/`ContractsErr` son EXACTAMENTE los del msg; los campos de gates
   y `ViewMode`/`Quitting` se preservan.
 - Para "q"/"ctrl+c", el `tea.Cmd` devuelto ES `tea.Quit` (cmd() produce un
-  `tea.QuitMsg`); para "g"/"c" y cualquier otra tecla o msg, el cmd es nil.
+  `tea.QuitMsg`); para "g"/"c"/"r" y cualquier otra tecla o msg, el cmd es nil.
+  (Para "r", el refresh real lo dispara el wiring en `program.Update`, no
+  `UpdateModel`: la funcion pura devuelve cmd nil.)
+- Para "r" (refresh), `Loading` y `ContractsLoading` quedan SIEMPRE true y
+  `Err`/`ContractsErr` quedan SIEMPRE nil (limpia errores viejos); `Summary`/
+  `Contracts`/`ViewMode`/`Quitting` se preservan EXACTAMENTE del model entrante.
 - `View` nunca devuelve un string con doble `\n` FINAL (el unico newline al
   final es el del cuerpo; la linea de ayuda no termina en `\n`); cuando esta
   quitting devuelve `""` (sin linea de ayuda).
@@ -144,25 +161,27 @@ linea de ayuda al final:
 - `UpdateModel(Model{}, tea.KeyMsg{Type: tea.KeyCtrlC})` -> `Model{Quitting:true}` con cmd = `tea.Quit`.
 - `UpdateModel(Model{ViewMode:"contracts"}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})` -> `Model{ViewMode:"gates"}` con cmd nil.
 - `UpdateModel(Model{ViewMode:"gates"}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})` -> `Model{ViewMode:"contracts"}` con cmd nil.
+- `UpdateModel(Model{Summary:"old gates", Err:errors.New("e"), Loading:false, Contracts:"old contracts", ContractsErr:errors.New("ce"), ContractsLoading:false, ViewMode:"contracts"}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})` -> `Model{Summary:"old gates", Err:nil, Loading:true, Contracts:"old contracts", ContractsErr:nil, ContractsLoading:true, ViewMode:"contracts"}` con cmd nil (resumenes/ViewMode/Quitting preservados, errores limpiados, ambos paneles a "cargando").
 - `UpdateModel(Model{Loading:true,ViewMode:"contracts"}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})` -> model sin cambios (ViewMode queda "contracts"), cmd nil.
 - `UpdateModel(Model{Loading:true}, tea.WindowSizeMsg{Width:80, Height:24})` -> model sin cambios, cmd nil.
 - `View(Model{Quitting:true, Err:errors.New("e"), Loading:true})` -> `""`.
 - `View(Model{Quitting:true, ViewMode:"contracts", ContractsErr:errors.New("e")})` -> `""` (quitting gana sobre contracts).
-- `View(Model{Err:errors.New("boom"), Loading:true})` -> `"error: boom\n\n[g]ates [c]ontracts [q]uit"`.
-- `View(Model{Loading:true})` -> `"cargando gates...\n\n[g]ates [c]ontracts [q]uit"`.
-- `View(Model{Summary:"overall_ok=true pass=0 fail=0"})` -> `"overall_ok=true pass=0 fail=0\n\n[g]ates [c]ontracts [q]uit"`.
-- `View(Model{ViewMode:"", Loading:true, ContractsLoading:true})` -> `"cargando gates...\n\n[g]ates [c]ontracts [q]uit"` (zero-value ViewMode == gates).
-- `View(Model{ViewMode:"contracts", ContractsErr:errors.New("boom"), ContractsLoading:true})` -> `"error: boom\n\n[g]ates [c]ontracts [q]uit"`.
-- `View(Model{ViewMode:"contracts", ContractsLoading:true})` -> `"cargando contratos...\n\n[g]ates [c]ontracts [q]uit"`.
-- `View(Model{ViewMode:"contracts", Contracts:"contracts=2\na: draft\nb: verified"})` -> `"contracts=2\na: draft\nb: verified\n\n[g]ates [c]ontracts [q]uit"`.
+- `View(Model{Err:errors.New("boom"), Loading:true})` -> `"error: boom\n\n[g]ates [c]ontracts [r]efresh [q]uit"`.
+- `View(Model{Loading:true})` -> `"cargando gates...\n\n[g]ates [c]ontracts [r]efresh [q]uit"`.
+- `View(Model{Summary:"overall_ok=true pass=0 fail=0"})` -> `"overall_ok=true pass=0 fail=0\n\n[g]ates [c]ontracts [r]efresh [q]uit"`.
+- `View(Model{ViewMode:"", Loading:true, ContractsLoading:true})` -> `"cargando gates...\n\n[g]ates [c]ontracts [r]efresh [q]uit"` (zero-value ViewMode == gates).
+- `View(Model{ViewMode:"contracts", ContractsErr:errors.New("boom"), ContractsLoading:true})` -> `"error: boom\n\n[g]ates [c]ontracts [r]efresh [q]uit"`.
+- `View(Model{ViewMode:"contracts", ContractsLoading:true})` -> `"cargando contratos...\n\n[g]ates [c]ontracts [r]efresh [q]uit"`.
+- `View(Model{ViewMode:"contracts", Contracts:"contracts=2\na: draft\nb: verified"})` -> `"contracts=2\na: draft\nb: verified\n\n[g]ates [c]ontracts [r]efresh [q]uit"`.
 
 ## Do / Don't
 - DO: type switch sobre `msg` (`switch msg := msg.(type)`) con `case gatesLoadedMsg`,
   `case contractsLoadedMsg`, `case tea.KeyMsg` (con un nested switch sobre
-  `msg.String()` con cases `"q","ctrl+c"` / `"g"` / `"c"` / `default`), y
+  `msg.String()` con cases `"q","ctrl+c"` / `"g"` / `"c"` / `"r"` / `default`), y
   `default` externo. Nada de type assertion sin `, ok`.
 - DO: devolver `tea.Quit` (la funcion del paquete) para "q"/"ctrl+c", no
-  inventar un cmd propio. Para "g"/"c" devolver cmd nil (solo cambian ViewMode).
+  inventar un cmd propio. Para "g"/"c"/"r" devolver cmd nil (solo cambian
+  ViewMode o, para "r", los flags de loading/errores).
 - DO: separar la logica pura (`model.go`: `Model`, `gatesLoadedMsg`,
   `contractsLoadedMsg`, `UpdateModel`, `View`, `helpLine`) del wiring
   (`program.go`: el wrapper `tea.Model` que shellea en `Init()`). Mismo
@@ -178,6 +197,16 @@ linea de ayuda al final:
   arranca el proceso. La `Model` inicial en `NewProgram()` arranca con
   `Loading: true` Y `ContractsLoading: true` (ViewMode queda en zero-value "",
   que View trata como "gates").
+- DO: el wrapper `Update(msg)` en `program.go` PRIMERO delega a `UpdateModel`
+  (que, si la tecla fue "r", ya reseteo `Loading`/`ContractsLoading` y limpio
+  errores, devolviendo cmd nil), y DESPUES detecta por su cuenta si `msg` es un
+  `tea.KeyMsg` con `.String() == "r"`; si lo es, el `tea.Cmd` que devuelve
+  `Update` es `tea.Batch(next.loadGates(), next.loadContracts())` (mismo patron
+  que `Init()`, reusando los metodos existentes `loadGates`/`loadContracts`).
+  Para cualquier otro msg, el cmd es el que devolvio `UpdateModel` tal cual. Es
+  wiring (glue, no testeado por el oraculo congelado); la unica novedad es el
+  `if` que decide CUANDO llamar a loadGates/loadContracts, que ya tienen su
+  pipe test cubriendo el shell-out real.
 - DO: `main.go` lanza `tea.NewProgram(ui.NewProgram()).Run()`; si `Run()`
   devuelve error, stderr + exit 1; si no, exit 0. (Sin cambios respecto del
   contrato previo: un TUI interactivo no tiene un "resultado" que devolver por
@@ -202,6 +231,13 @@ linea de ayuda al final:
   `UpdateModel`/`View` como funciones puras; el pipe end-to-end (que SI
   shellea a python) vive en `pipe_test.go` como test ADICIONAL opt-in
   (salteado por defecto via `LAZYKDD_RUN_PIPE=1`), fuera del oraculo sellado.
+- DON'T: resolver las carreras de refrescos repetidos en esta version. Si el
+  usuario aprieta 'r' varias veces seguidas, cada apretada dispara un nuevo par
+  de shell-outs y las respuestas viejas pueden llegar despues de las nuevas.
+  Eso es una LIMITACION ACEPTADA de la primera version (sin IDs de peticion ni
+  cancelacion); se documenta como trade-off en el REPORT. Resolverlo es tarea
+  futura. Tampoco agregues un indicador visual de "refrescando" distinto al
+  "cargando..." que ya existe (la precedencia loading > resumen basta).
 - DON'T: tocar `tui/internal/kdd/gates.go`, su contrato `tui-gates-summarize.md`,
   `scripts/`, ni `.agents/`.
 
@@ -215,14 +251,17 @@ con err no nil, `contractsLoadedMsg` con summary+err nil (verifica que gates y
 ViewMode/Quitting se preservan), `contractsLoadedMsg` con err no nil, `tea.KeyMsg`
 "q" (quita + cmd es tea.Quit), "ctrl+c" (idem), "g" (setea ViewMode="gates",
 cmd nil, resto sin cambios), "c" (setea ViewMode="contracts", cmd nil, resto
-sin cambios), otra tecla "x" (NO cambia nada, incluido ViewMode, cmd nil),
-`tea.WindowSizeMsg` (no cambia, cmd nil), y un msg propio no reconocido (no
-cambia, cmd nil, sin panic). Casos de `View`: quitting (-> "", sin linea de
-ayuda), quitting-gana-sobre-contracts (-> ""), error gates (-> "error:
-...\n" + helpLine), loading gates (-> "cargando gates...\n" + helpLine), resumen
-gates normal (-> summary + "\n" + helpLine, sin doble newline FINAL), zero-
-value ViewMode es gates (-> "cargando gates...\n" + helpLine ignorando campos
-de contracts), error contracts (-> "error: ...\n" + helpLine), loading
+sin cambios), "r" (refresh: Loading y ContractsLoading a true, Err y
+ContractsErr a nil incluso con error previo, Summary/Contracts/ViewMode/Quitting
+sin cambios, cmd nil -- la pureza no shellear), "r" desde estado limpio (idem
+sobre un model sin errores), otra tecla "x" (NO cambia nada, incluido ViewMode,
+cmd nil), `tea.WindowSizeMsg` (no cambia, cmd nil), y un msg propio no
+reconocido (no cambia, cmd nil, sin panic). Casos de `View`: quitting (-> "",
+sin linea de ayuda), quitting-gana-sobre-contracts (-> ""), error gates (->
+"error: ...\n" + helpLine), loading gates (-> "cargando gates...\n" + helpLine),
+resumen gates normal (-> summary + "\n" + helpLine, sin doble newline FINAL),
+zero-value ViewMode es gates (-> "cargando gates...\n" + helpLine ignorando
+campos de contracts), error contracts (-> "error: ...\n" + helpLine), loading
 contracts (-> "cargando contratos...\n" + helpLine), resumen contracts normal
 (-> Contracts + "\n" + helpLine), y gates-ignora-campos-de-contracts. El
 literal exacto de la linea de ayuda se congela en el test como `wantHelpLine`
@@ -259,16 +298,17 @@ profundidad 1. Cubre AMBOS pipes (gates -> `gatesLoadedMsg` con
 - PARAR y reportar si extender `UpdateModel` sin romper ninguno de los tests
   viejos resulta imposible (los tests viejos de `UpdateModel` se preservan
   intactos: "q"/"ctrl+c" siguen igual, "x"/WindowSizeMsg/unknown siguen sin
-  cambios; solo `View` cambia al agregar la linea de ayuda, y esos tests se
-  actualizan con el nuevo esperado — re-sellado via `tests_sha256`).
+  cambios; solo `View` cambia al actualizar la linea de ayuda a
+  `[r]efresh`, y esos tests se actualizan con el nuevo esperado — re-sellado
+  via `tests_sha256`).
 
 ## Budget note
-`UpdateModel` extendida mide `cyclomatic = 7` (un case mas `contractsLoadedMsg`
-y dos cases mas `"g"`/`"c"` en el nested switch) y `function_length = 30` (la
-metrica del gate cuenta un poco mas por los comments; el budget `lines_max:
-45` deja margen). El budget declarado sube de los `cyclomatic_max: 9` /
-`lines_max: 30` del contrato previo a `cyclomatic_max: 9` / `lines_max: 45`
-(cyclomatic no crecio lo suficiente para mover el tope, lines si por la
-rama nueva de contracts y los comments); `nesting_max: 3` (medido 2) y
-`params_max: 2` (medido 2) sin cambios. Todo bajo los topes globales firmados
-(cyclomatic 20, nesting 4, params 5, lines 80).
+`UpdateModel` extendida (con el case `"r"`) mide `cyclomatic = 8` (un case mas
+`"r"` en el nested switch, sobre los 7 previos de gates+contracts) y
+`function_length = 44` con comments incluidos (la metrica del gate cuenta los
+comments del case "r"; `measure_complexity` sin comments reporta 36). El budget
+`lines_max` sube a `50` (margen 6 sobre los 44 reales del gate — los 45 previos
+quedaban a margen 1, demasiado tenue para un contrato que aun puede crecer);
+`cyclomatic_max: 9` (medido 8, margen 1) sin cambios. `nesting_max: 3` (medido
+2) y `params_max: 2` (medido 2) sin cambios. Todo bajo los topes globales
+firmados (cyclomatic 20, nesting 4, params 5, lines 80).

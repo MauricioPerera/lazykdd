@@ -77,10 +77,21 @@ func (p program) loadContracts() tea.Cmd {
 }
 
 // Update delega a la logica pura UpdateModel y envuelve la nueva Model de
-// vuelta en el wrapper tea.Model.
+// vuelta en el wrapper tea.Model. Para la tecla "r" (refresh), UpdateModel ya
+// reseteo Loading/ContractsLoading y limpio errores (devolviendo cmd nil, la
+// funcion pura no sabe shellear); es ESTE wiring el que detecta "r" y dispara
+// el refresh real reusando loadGates/loadContracts en un tea.Batch (mismo
+// patron que Init). Para cualquier otro msg, el cmd es el que devolvio
+// UpdateModel, sin cambios. Limitacion conocida (primera version): no hay
+// cancelacion ni IDs de peticion, asi que varios "r" apretados seguidos pueden
+// cruzar respuestas viejas con nuevas (carreras) -- aceptado, documentado.
 func (p program) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newModel, cmd := UpdateModel(p.Model, msg)
-	return program{Model: newModel}, cmd
+	next := program{Model: newModel}
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "r" {
+		return next, tea.Batch(next.loadGates(), next.loadContracts())
+	}
+	return next, cmd
 }
 
 // View delega a la View pura.

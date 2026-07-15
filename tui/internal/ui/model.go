@@ -52,7 +52,7 @@ type contractsLoadedMsg struct {
 
 // helpLine es la linea de ayuda que View agrega SIEMPRE al final (salvo cuando
 // esta quitting, que devuelve ""). Literal exacto exigido por el contrato.
-const helpLine = "\n[g]ates [c]ontracts [q]uit"
+const helpLine = "\n[g]ates [c]ontracts [r]efresh [q]uit"
 
 // UpdateModel es la funcion pura que gobierna este contrato: dada una Model y
 // un tea.Msg, devuelve la nueva Model y un tea.Cmd. Sin I/O, sin red, sin
@@ -81,6 +81,20 @@ func UpdateModel(m Model, msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		case "c":
 			m.ViewMode = "contracts"
+			return m, nil
+		case "r":
+			// Refresh: ambos paneles vuelven a "cargando" y se limpian los
+			// errores viejos (un refresco no debe seguir mostrando el error
+			// de la carga anterior mientras espera el resultado nuevo). El
+			// resto (Summary/Contracts/ViewMode/Quitting) se preserva sin
+			// cambios: los resumenes viejos quedan visibles hasta que lleguen
+			// los nuevos. La funcion pura NO sabe shellear -> cmd nil; el
+			// refresh real (tea.Batch de loadGates/loadContracts) lo dispara
+			// el wiring en program.Update al ver esta misma tecla.
+			m.Loading = true
+			m.ContractsLoading = true
+			m.Err = nil
+			m.ContractsErr = nil
 			return m, nil
 		default:
 			return m, nil
