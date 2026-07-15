@@ -34,3 +34,9 @@ coverage/
 # desde scripts/export_gate_contract.py; no es fuente. Vive en la raiz del
 # repo como <task>.gate.md (el gate real exige rutas target/tests sin "..").
 *.gate.md
+
+# Binarios compilados de la Piel 3 (TUI Go): se regeneran con
+# `go build -o lazykdd(.exe) .` desde tui/.
+tui/lazykdd
+tui/lazykdd.exe
+tui/*.test
