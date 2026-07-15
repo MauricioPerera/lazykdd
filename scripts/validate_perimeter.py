@@ -175,6 +175,66 @@ def _matches_any_pattern(path, patterns):
     return False
 
 
+def _finding(file_rel, rule, msg, level='ERROR'):
+    """Construye un finding dict (mismo patron que validate_skills.py)."""
+    return {'file': file_rel, 'level': level, 'rule': rule, 'msg': msg}
+
+
+def _load_and_validate_touch_only(contract_path, file_rel):
+    """Lee y parsea el contrato, valida touch_only. Devuelve (data, error_findings):
+    `error_findings` es None si todo OK (y `data` es el frontmatter parseado), o la
+    lista de EXACTAMENTE 1 finding a devolver de inmediato si hay un error (archivo
+    no legible / frontmatter invalido / touch_only invalido) -- en ese caso `data` es
+    None."""
+    # Leer contrato
+    try:
+        with open(contract_path, 'r', encoding='utf-8') as fh:
+            text = fh.read()
+    except OSError:
+        return None, [_finding(file_rel, 'FM_PARSE',
+                               'contrato inexistente o no legible')]
+
+    # Parsear frontmatter
+    data, _body = parse_frontmatter(text)
+    if data is None:
+        return None, [_finding(
+            file_rel, 'FM_PARSE',
+            "frontmatter YAML no encontrado o no delimitado por '---'")]
+
+    # Validar touch_only
+    touch_only = data.get('touch_only')
+    if not _is_valid_touch_only(touch_only):
+        return None, [_finding(
+            file_rel, 'TOUCH_ONLY_MISSING',
+            'touch_only ausente, no-lista, vacia o con items no-string/vacios')]
+
+    return data, None
+
+
+def _check_changed_files(normalized, tests_path, target_path, touch_only,
+                          file_rel):
+    """Valida cada archivo cambiado: TESTS_TOUCHED (si es el oraculo Y tests !=
+    target) o OUT_OF_PERIMETER (si no matchea ningun patron de touch_only). Logica
+    identica al loop original, incluido el `continue` que evita doble-reporte del
+    mismo archivo (TESTS_TOUCHED excluye OUT_OF_PERIMETER para ESE archivo)."""
+    findings = []
+    for changed in normalized:
+        # Regla: TESTS_TOUCHED
+        if changed == tests_path and tests_path != target_path:
+            findings.append(_finding(
+                file_rel, 'TESTS_TOUCHED',
+                'el archivo {} (oraculo congelado) no debe cambiar '
+                '(tests != target)'.format(changed)))
+            continue  # No emitir OUT_OF_PERIMETER para este archivo
+
+        # Regla: OUT_OF_PERIMETER
+        if not _matches_any_pattern(changed, touch_only):
+            findings.append(_finding(
+                file_rel, 'OUT_OF_PERIMETER',
+                'archivo {} fuera del perimetro touch_only'.format(changed)))
+    return findings
+
+
 def validate_perimeter(contract_path, changed_files):
     """Valida que los archivos cambiados estan dentro del perimetro touch_only.
 
@@ -187,73 +247,23 @@ def validate_perimeter(contract_path, changed_files):
         (file, rule, msg). 'file' es la ruta posix del contrato (relativa,
         tal como se la pasa).
     """
-    findings = []
     file_rel = contract_path.replace('\\', '/')
 
-    # Leer contrato
-    try:
-        with open(contract_path, 'r', encoding='utf-8') as fh:
-            text = fh.read()
-    except OSError:
-        findings.append({
-            'file': file_rel,
-            'level': 'ERROR',
-            'rule': 'FM_PARSE',
-            'msg': 'contrato inexistente o no legible'
-        })
-        return findings
+    # Fase 1: leer contrato, parsear frontmatter y validar touch_only
+    data, err = _load_and_validate_touch_only(contract_path, file_rel)
+    if err is not None:
+        return err
 
-    # Parsear frontmatter
-    data, _body = parse_frontmatter(text)
-    if data is None:
-        findings.append({
-            'file': file_rel,
-            'level': 'ERROR',
-            'rule': 'FM_PARSE',
-            'msg': "frontmatter YAML no encontrado o no delimitado por '---'"
-        })
-        return findings
-
-    # Validar touch_only
-    touch_only = data.get('touch_only')
-    if not _is_valid_touch_only(touch_only):
-        findings.append({
-            'file': file_rel,
-            'level': 'ERROR',
-            'rule': 'TOUCH_ONLY_MISSING',
-            'msg': 'touch_only ausente, no-lista, vacia o con items no-string/vacios'
-        })
-        return findings
-
-    # Normalizar cambiados
+    # Fase 2: normalizar cambiados y validar cada uno contra el perimetro
     normalized = _normalize_changed_files(changed_files)
     if not normalized:
-        return findings
+        return []
 
-    # Obtener tests y target del contrato (para checks especiales)
+    touch_only = data.get('touch_only')
     tests_path = data.get('tests', '')
     target_path = data.get('target', '')
-
-    # Validar cada archivo cambiado
-    for changed in normalized:
-        # Regla: TESTS_TOUCHED
-        if changed == tests_path and tests_path != target_path:
-            findings.append({
-                'file': file_rel,
-                'level': 'ERROR',
-                'rule': 'TESTS_TOUCHED',
-                'msg': 'el archivo {} (oraculo congelado) no debe cambiar (tests != target)'.format(changed)
-            })
-            continue  # No emitir OUT_OF_PERIMETER para este archivo
-
-        # Regla: OUT_OF_PERIMETER
-        if not _matches_any_pattern(changed, touch_only):
-            findings.append({
-                'file': file_rel,
-                'level': 'ERROR',
-                'rule': 'OUT_OF_PERIMETER',
-                'msg': 'archivo {} fuera del perimetro touch_only'.format(changed)
-            })
+    findings = _check_changed_files(normalized, tests_path, target_path,
+                                    touch_only, file_rel)
 
     # Ordenar por (file, rule, msg)
     findings.sort(key=lambda f: (f['file'], f['rule'], f['msg']))

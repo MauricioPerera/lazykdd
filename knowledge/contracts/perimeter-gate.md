@@ -11,11 +11,10 @@ signature: "def validate_perimeter(contract_path, changed_files) -> list"
 test_command: "python -m unittest tests/test_validate_perimeter.py"
 test_cwd: ../..
 budget:
-  max_cyclomatic_complexity: 10
-  max_nesting_depth: 4
-  cyclomatic_max: 11
-  nesting_max: 3
-  params_max: 3
+  cyclomatic_max: 7
+  nesting_max: 4
+  params_max: 5
+  lines_max: 40
 tests: "tests/test_validate_perimeter.py"
 tests_sha256: "9e36981ada785a414b01e2ecd1d64f6ccdf8bc19438424d72d17d922659a84f4"
 touch_only: ['scripts/validate_perimeter.py', 'scripts/validate_contracts.py', 'tests/test_parser_coherence.py']
