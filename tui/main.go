@@ -1,52 +1,30 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 
-	"github.com/MauricioPerera/lazykdd/tui/internal/kdd"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/MauricioPerera/lazykdd/tui/internal/ui"
 )
 
-// main es el wiring minimo de la Piel 3 (TUI Go): shellea al CLI Python ya
-// existente, parsea su JSON via kdd.Summarize e imprime el resumen. Sin
-// interactividad, sin loop de eventos, sin Bubble Tea (tarea futura).
+// main es el wiring minimo de la Piel 3 (TUI Go) en su modo interactivo: lanza
+// el programa Bubble Tea (arquitectura Elm en tui/internal/ui) y lo deja correr
+// hasta que el usuario sale con 'q' o Ctrl+C. La logica pura (UpdateModel/View)
+// y el wrapper tea.Model viven en tui/internal/ui; aca solo el lanzamiento.
 //
-// Asume que el binario se ejecuta desde la RAIZ del repo (cwd = repo root),
-// igual que el CLI Python `scripts/kdd_cli.py` (que usa rutas root-relative).
-// Resolverlo de forma mas robusta es fuera de alcance de esta tarea.
+// Asume que el binario se ejecuta desde la RAIZ del repo (cwd = repo root), igual
+// que el CLI Python `scripts/kdd_cli.py` (que usa rutas root-relative) y que el
+// Init() del wrapper al shellerar (mismo patron que el main.go previo). El modo
+// viejo (imprime y sale, exit-code-refleja-overall_ok) SE PIERDE a cambio de la
+// interactividad: un TUI interactivo no tiene un "resultado" que devolver por
+// exit code de la misma forma que un comando no-interactivo. Si Run() devuelve
+// error, se imprime a stderr y se sale 1; si no, exit 0.
 func main() {
-	// 1. corre `python scripts/kdd_cli.py gates run-all --json`.
-	cmd := exec.Command("python", "scripts/kdd_cli.py", "gates", "run-all", "--json")
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		// 2. falla en arrancar (ejecutable no encontrado, etc.) -> stderr + exit 1.
-		// Un *exec.ExitError (proceso corrio pero salio != 0, p.ej. gates
-		// fallando -> overall_ok=false) NO aborta: se conserva stdout y se
-		// resume igual, decidiendo el exit code por overall_ok abajo.
-		if _, ok := err.(*exec.ExitError); !ok {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-	}
-	// 3. pasa el stdout capturado a kdd.Summarize.
-	summary, err := kdd.Summarize(stdout.Bytes())
-	if err != nil {
-		// 4. error de parseo -> stderr + exit 1.
+	p := tea.NewProgram(ui.NewProgram())
+	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	// 5. imprime el resumen y sale 0 si overall_ok=true, si no 1. Se detecta
-	// por el prefijo del header del resumen (sin reparsear JSON ni exportar
-	// una funcion extra): el header es "overall_ok=<true|false> ...", asi que
-	// "overall_ok=true" es prefijo solo cuando el flag es true.
-	fmt.Println(summary)
-	if strings.HasPrefix(summary, "overall_ok=true") {
-		os.Exit(0)
-	}
-	os.Exit(1)
 }
