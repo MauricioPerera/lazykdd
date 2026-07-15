@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""CLI de KDD (Contrato: kdd-contracts-list-json).
+"""CLI de KDD (Contrato: kdd-contracts-scaffold-json).
 
 Piel 2 (CLI Python) del proyecto lazykdd: un unico punto de entrada con
-una funcion ``main`` que despacha DOS subcomandos y emite JSON:
+una funcion ``main`` que despacha TRES subcomandos y emite JSON:
 
   - ``gates run-all --json``   -> motor de gates ya existente
     (``scripts/mcp_gate_dispatch.py``).
   - ``contracts list --json``  -> lista el frontmatter de los contratos de
     un directorio (``scripts/validate_contracts.py``).
+  - ``contracts scaffold <task> --json`` -> crea un nuevo contrato a partir
+    de ``TEMPLATE-task-contract.md`` (``scaffold_contract``).
 
 Ambos modulos hermanos se importan igual que ``scripts/validate_rules.py``
 importa ``rule_engine`` (mismo directorio, sin path hacks mas alla de
@@ -16,15 +18,21 @@ poner ``scripts/`` en ``sys.path``).
   Uso:
     python scripts/kdd_cli.py gates run-all --json
     python scripts/kdd_cli.py contracts list --json
+    python scripts/kdd_cli.py contracts scaffold <task> --json
 """
 
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mcp_gate_dispatch  # noqa: E402
 import validate_contracts  # noqa: E402
+
+
+_KEBAB_RE = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
+_TASK_PLACEHOLDER_LINE = 'task: <nombre-kebab-case>'
 
 
 def list_contracts_json(contracts_dir='knowledge/contracts'):
@@ -66,7 +74,70 @@ def list_contracts_json(contracts_dir='knowledge/contracts'):
     return result
 
 
-def main(argv, stdout, run_all_fn=None, list_contracts_fn=None):
+def scaffold_contract(task_name, contracts_dir='knowledge/contracts',
+                      template_path='knowledge/contracts/TEMPLATE-task-contract.md'):
+    """Crea un nuevo contrato a partir de ``TEMPLATE-task-contract.md``.
+
+    - Valida ``task_name`` contra kebab-case estricto
+      (``^[a-z0-9]+(-[a-z0-9]+)*$``). Si NO matchea, devuelve
+      ``{'error': 'invalid task name (must be kebab-case): ' + task_name}``
+      SIN tocar el filesystem (ni leer el template ni escribir nada).
+    - ``target_path = os.path.join(contracts_dir, task_name + '.md')``. Si
+      YA EXISTE (``os.path.exists``), devuelve
+      ``{'error': 'contract already exists: ' + target_path}`` SIN
+      sobreescribir nunca un archivo existente.
+    - Si ``template_path`` no existe, devuelve
+      ``{'error': 'template not found: ' + template_path}``.
+    - Lee el template. Genera el contenido nuevo:
+      1. Reemplaza la linea ``task: <nombre-kebab-case>`` por
+         ``task: <task_name>`` (reemplazo literal de esa linea exacta del
+         frontmatter).
+      2. Elimina el bloque final de instrucciones humanas: todo desde (e
+         incluyendo) la linea ``---`` que precede a ``<!--`` hasta el final
+         del archivo (el comentario HTML completo, incluido su ``-->`` de
+         cierre). El contenido resultante termina justo despues de la
+         seccion ``## Constraints`` con un unico salto de linea final.
+      3. NO toca ningun otro placeholder ``<...>``.
+    - Escribe el contenido nuevo en ``target_path`` (crealo, no existia) y
+      devuelve ``{'created': True, 'path': target_path}``.
+    """
+    if not _KEBAB_RE.fullmatch(task_name):
+        return {'error': 'invalid task name (must be kebab-case): ' + task_name}
+    target_path = os.path.join(contracts_dir, task_name + '.md')
+    if os.path.exists(target_path):
+        return {'error': 'contract already exists: ' + target_path}
+    if not os.path.exists(template_path):
+        return {'error': 'template not found: ' + template_path}
+    with open(template_path, 'r', encoding='utf-8') as fh:
+        text = fh.read()
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        if line == _TASK_PLACEHOLDER_LINE:
+            lines[i] = 'task: ' + task_name
+            break
+    comment_idx = None
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith('<!--'):
+            comment_idx = i
+            break
+    if comment_idx is not None:
+        sep_idx = comment_idx - 1
+        while sep_idx >= 0 and lines[sep_idx].strip() == '':
+            sep_idx -= 1
+        if sep_idx >= 0 and lines[sep_idx].strip() == '---':
+            lines = lines[:sep_idx]
+        else:
+            lines = lines[:comment_idx]
+    while lines and lines[-1].strip() == '':
+        lines.pop()
+    content = '\n'.join(lines) + '\n'
+    with open(target_path, 'w', encoding='utf-8') as fh:
+        fh.write(content)
+    return {'created': True, 'path': target_path}
+
+
+def main(argv, stdout, run_all_fn=None, list_contracts_fn=None,
+         scaffold_fn=None):
     """Despacha el CLI de KDD.
 
     ``argv``: lista de argumentos SIN el nombre del programa.
@@ -80,6 +151,9 @@ def main(argv, stdout, run_all_fn=None, list_contracts_fn=None):
       -> list[dict] | {'error': ...}`` inyectable para tests; si es ``None``
       se resuelve a ``list_contracts_json`` (mismo modulo, lookup en cada
       llamada para que monkeypatch funcione).
+    ``scaffold_fn``: callable ``fn(task_name) -> {'created': True, ...} |
+      {'error': ...}`` inyectable para tests; si es ``None`` se resuelve a
+      ``scaffold_contract`` (mismo modulo, lookup en cada llamada).
 
     - ``argv == ['gates', 'run-all', '--json']``: ejecuta ``fn(repo_root='.')``,
       escribe ``json.dumps(result)`` (una linea, sin pretty-print) en
@@ -90,11 +164,18 @@ def main(argv, stdout, run_all_fn=None, list_contracts_fn=None):
       lista (incluida vacia) escribe ``json.dumps(result)`` y devuelve
       ``0``; si es un dict con clave ``'error'`` escribe
       ``json.dumps(result)`` y devuelve ``1``.
+    - ``argv == ['contracts', 'scaffold', <task_name>, '--json']`` (4
+      elementos exactos: ``argv[0]=='contracts'``, ``argv[1]=='scaffold'``,
+      ``argv[3]=='--json'``, ``argv[2]`` un string): ejecuta
+      ``fn(argv[2])``. Si ``result`` tiene ``'created': True`` escribe
+      ``json.dumps(result)`` y devuelve ``0``; si tiene clave ``'error'``
+      escribe ``json.dumps(result)`` y devuelve ``1``.
     - cualquier otro ``argv``: escribe un mensaje de uso de UNA linea que
-      empieza con ``usage:`` y menciona AMBOS subcomandos en ``stdout`` y
+      empieza con ``usage:`` y menciona los TRES subcomandos en ``stdout`` y
       devuelve ``2``. Ningun ``fn`` se llama en este caso.
     - nunca lanza una excepcion no controlada por un ``argv`` malformado:
-      el unico parseo es una comparacion de igualdad de listas.
+      el unico parseo es una comparacion de igualdad de listas (y, para
+      scaffold, un chequeo de largo + posiciones + tipo).
     """
     if argv == ['gates', 'run-all', '--json']:
         fn = run_all_fn if run_all_fn is not None else mcp_gate_dispatch.run_all_level1
@@ -109,7 +190,17 @@ def main(argv, stdout, run_all_fn=None, list_contracts_fn=None):
             return 0
         stdout.write(json.dumps(result))
         return 1
-    stdout.write('usage: kdd_cli gates run-all --json | contracts list --json\n')
+    if (len(argv) == 4 and argv[0] == 'contracts' and argv[1] == 'scaffold'
+            and argv[3] == '--json' and isinstance(argv[2], str)):
+        fn = scaffold_fn if scaffold_fn is not None else scaffold_contract
+        result = fn(argv[2])
+        if result.get('created') is True:
+            stdout.write(json.dumps(result))
+            return 0
+        stdout.write(json.dumps(result))
+        return 1
+    stdout.write('usage: kdd_cli gates run-all --json | contracts list --json '
+                 '| contracts scaffold <task> --json\n')
     return 2
 
 
