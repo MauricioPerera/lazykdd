@@ -11,10 +11,10 @@ signature: "def validate_skills(skill_dirs) -> list"
 test_command: "python -m unittest tests/test_validate_skills.py"
 test_cwd: ../..
 budget:
-  max_cyclomatic_complexity: 10
-  max_nesting_depth: 4
+  cyclomatic_max: 9
   nesting_max: 4
   params_max: 2
+  lines_max: 48
 tests: "tests/test_validate_skills.py"
 tests_sha256: "35f2a4a4b11c120a85135e37517de84b3d8b82d27ae661af805c49e6250cff4a"
 touch_only: ['scripts/validate_skills.py', 'tests/test_parser_coherence.py']

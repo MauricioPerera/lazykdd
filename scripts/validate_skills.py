@@ -222,6 +222,143 @@ def _finding(file, rule, msg, level='ERROR'):
 # Validacion de skills
 # ---------------------------------------------------------------------------
 
+def _check_name(fm_data, skill_name, file_rel_full):
+    """Valida ``name`` del frontmatter.
+
+    Devuelve ``(findings, name)``: ``findings`` con ``FM_NAME`` si el name es
+    ausente/no-string/vacio, o ``FM_NAME_KEBAB``/``FM_NAME_DIR`` cuando es
+    valido (ambos pueden disparar de forma independiente); ``name`` es el
+    string valido para registrar en la deteccion de duplicados, o ``None``.
+    """
+    findings = []
+    name = fm_data.get('name')
+    if not name or not isinstance(name, str) or name == '':
+        findings.append(_finding(file_rel_full, 'FM_NAME',
+                                 'name ausente, no-string o vacio'))
+        return findings, None
+    # FM_NAME_KEBAB
+    if not re.match(r'^[a-z0-9]+(-[a-z0-9]+)*$', name):
+        findings.append(_finding(file_rel_full, 'FM_NAME_KEBAB',
+                                 'name no es kebab-case'))
+    # FM_NAME_DIR: name == nombre del subdirectorio
+    if name != skill_name:
+        findings.append(_finding(file_rel_full, 'FM_NAME_DIR',
+                                 'name ({}) no coincide con directorio ({})'.format(
+                                     name, skill_name)))
+    return findings, name
+
+
+def _check_desc(fm_data, file_rel_full):
+    """Valida ``description``: ``FM_DESC`` si ausente/no-string/vacia, o
+    ``FM_DESC_LEN`` si el largo esta fuera de [50, 1024] (inclusive en bordes).
+    """
+    findings = []
+    desc = fm_data.get('description')
+    if not desc or not isinstance(desc, str) or desc == '':
+        findings.append(_finding(file_rel_full, 'FM_DESC',
+                                 'description ausente, no-string o vacia'))
+        return findings
+    desc_len = len(desc)
+    if desc_len < 50 or desc_len > 1024:
+        findings.append(_finding(file_rel_full, 'FM_DESC_LEN',
+                                 'description largo {} fuera de [50, 1024]'.format(
+                                     desc_len)))
+    return findings
+
+
+def _check_body_links(body, skill_md, skill_dir_abs, file_rel_full):
+    """Valida cuerpo y enlaces: ``BODY_EMPTY`` si el cuerpo esta vacio, y
+    ``LINK_BROKEN`` por cada enlace relativo del cuerpo que no resuelve a un
+    archivo o directorio existente (externos/anclas/code-spans se ignoran).
+    """
+    findings = []
+    if not body.strip():
+        findings.append(_finding(file_rel_full, 'BODY_EMPTY',
+                                 'cuerpo vacio'))
+    for target in _extract_links(body):
+        resolved, _inside = _resolve_link(skill_md, target, skill_dir_abs)
+        if resolved is None:
+            continue  # Externo, ancla, etc.
+        if not os.path.exists(resolved):
+            findings.append(_finding(file_rel_full, 'LINK_BROKEN',
+                                     'enlace roto: {}'.format(target)))
+    return findings
+
+
+def _validate_one_skill(skill_dir_abs, skill_dir_name, entry, entry_path):
+    """Valida UN skill individual (un subdirectorio inmediato).
+
+    Devuelve ``(findings, name_entry)``: ``findings`` es la lista (posiblemente
+    vacia) de findings de este skill; ``name_entry`` es ``None`` si no hay un
+    ``name`` valido para registrar en la deteccion global de duplicados, o
+    ``(name, file_rel_full, entry_path)`` si lo hay (mismo dato que el caller
+    acumula en ``name_to_files``).
+
+    Semantica identica a la rama por-entrada previa: ``SKILL_MISSING``/``IO``/
+    ``FM_PARSE`` cortan la evaluacion del resto del archivo; un ``FM_NAME``
+    invalido NO corta (se siguen evaluando ``description``/``body``/``links``);
+    ``BODY_EMPTY`` y ``LINK_BROKEN`` se evaluan siempre. Delega los chequeos a
+    ``_check_name``/``_check_desc``/``_check_body_links``.
+    """
+    findings = []
+    skill_name = entry
+    skill_md = os.path.join(entry_path, 'SKILL.md')
+    # File path en formato posix: "skill_dir_name/skill_name" o similar
+    file_rel_prefix = skill_dir_name + '/' + skill_name
+    file_rel_full = file_rel_prefix + '/SKILL.md'
+
+    # SKILL_MISSING
+    if not os.path.isfile(skill_md):
+        findings.append(_finding(file_rel_prefix, 'SKILL_MISSING',
+                                 'SKILL.md no encontrado'))
+        return findings, None
+
+    # Leer SKILL.md
+    try:
+        with open(skill_md, 'r', encoding='utf-8') as fh:
+            text = fh.read()
+    except OSError:
+        findings.append(_finding(file_rel_full, 'IO',
+                                 'no se pudo leer SKILL.md'))
+        return findings, None
+
+    # FM_PARSE
+    fm_data, body = parse_frontmatter(text)
+    if fm_data is None:
+        findings.append(_finding(file_rel_full, 'FM_PARSE',
+                                 "frontmatter YAML no encontrado o no delimitado por '---'"))
+        return findings, None
+
+    # name/description/body+links: FM_NAME invalido no corta el resto
+    name_findings, name = _check_name(fm_data, skill_name, file_rel_full)
+    findings.extend(name_findings)
+    findings.extend(_check_desc(fm_data, file_rel_full))
+    findings.extend(_check_body_links(body, skill_md, skill_dir_abs, file_rel_full))
+
+    name_entry = (name, file_rel_full, entry_path) if name is not None else None
+    return findings, name_entry
+
+
+def _detect_duplicates(name_to_files):
+    """Devuelve los findings ``NAME_DUP``.
+
+    Un finding por ocurrencia EXTRA de un nombre repetido, anclado en el
+    archivo lexicograficamente posterior. Logica identica a la previa: para
+    cada nombre con mas de una ocurrencia, se ordenan sus archivos por
+    ``file_rel`` ascendente y se emite un finding por cada uno a partir del
+    segundo (el primero es la version canonica y no genera finding).
+    """
+    findings = []
+    for name, files in name_to_files.items():
+        if len(files) > 1:
+            files_sorted = sorted(files, key=lambda x: x[0])
+            for i in range(1, len(files_sorted)):
+                file_rel, _entry_path = files_sorted[i]
+                findings.append(_finding(file_rel, 'NAME_DUP',
+                                         'name {} repetido entre skills'.format(name)))
+    return findings
+
+
 def validate_skills(skill_dirs):
     """Valida skills bajo los directorios especificados.
 
@@ -255,95 +392,15 @@ def validate_skills(skill_dirs):
             if not os.path.isdir(entry_path):
                 # Archivos sueltos en el dir se ignoran
                 continue
+            skill_findings, name_entry = _validate_one_skill(
+                skill_dir_abs, skill_dir_name, entry, entry_path)
+            findings.extend(skill_findings)
+            if name_entry is not None:
+                name, file_rel_full, _entry_path = name_entry
+                name_to_files.setdefault(name, []).append(
+                    (file_rel_full, _entry_path))
 
-            skill_name = entry
-            skill_md = os.path.join(entry_path, 'SKILL.md')
-            # File path en formato posix: "skill_dir_name/skill_name" o similar
-            file_rel_prefix = skill_dir_name + '/' + skill_name
-            file_rel_full = file_rel_prefix + '/SKILL.md'
-
-            # SKILL_MISSING
-            if not os.path.isfile(skill_md):
-                findings.append(_finding(file_rel_prefix, 'SKILL_MISSING',
-                                        'SKILL.md no encontrado'))
-                continue
-
-            # Leer SKILL.md
-            try:
-                with open(skill_md, 'r', encoding='utf-8') as fh:
-                    text = fh.read()
-            except OSError:
-                findings.append(_finding(file_rel_full, 'IO',
-                                        'no se pudo leer SKILL.md'))
-                continue
-
-            # FM_PARSE
-            fm_data, body = parse_frontmatter(text)
-            if fm_data is None:
-                findings.append(_finding(file_rel_full, 'FM_PARSE',
-                                        "frontmatter YAML no encontrado o no delimitado por '---'"))
-                continue
-
-            # FM_NAME: presente, string, no vacio
-            name = fm_data.get('name')
-            if not name or not isinstance(name, str) or name == '':
-                findings.append(_finding(file_rel_full, 'FM_NAME',
-                                        'name ausente, no-string o vacio'))
-                # Seguir checks si es posible
-            else:
-                # FM_NAME_KEBAB
-                if not re.match(r'^[a-z0-9]+(-[a-z0-9]+)*$', name):
-                    findings.append(_finding(file_rel_full, 'FM_NAME_KEBAB',
-                                            'name no es kebab-case'))
-
-                # FM_NAME_DIR: name == skill_dir_name
-                if name != skill_name:
-                    findings.append(_finding(file_rel_full, 'FM_NAME_DIR',
-                                            'name ({}) no coincide con directorio ({})'.format(
-                                                name, skill_name)))
-
-                # NAME_DUP: registrar para deteccion global
-                if name not in name_to_files:
-                    name_to_files[name] = []
-                name_to_files[name].append((file_rel_full, entry_path))
-
-            # FM_DESC: presente, string, no vacio
-            desc = fm_data.get('description')
-            if not desc or not isinstance(desc, str) or desc == '':
-                findings.append(_finding(file_rel_full, 'FM_DESC',
-                                        'description ausente, no-string o vacia'))
-            else:
-                # FM_DESC_LEN: [50, 1024]
-                desc_len = len(desc)
-                if desc_len < 50 or desc_len > 1024:
-                    findings.append(_finding(file_rel_full, 'FM_DESC_LEN',
-                                            'description largo {} fuera de [50, 1024]'.format(
-                                                desc_len)))
-
-            # BODY_EMPTY
-            if not body.strip():
-                findings.append(_finding(file_rel_full, 'BODY_EMPTY',
-                                        'cuerpo vacio'))
-
-            # LINK_BROKEN: enlaces relativos que no resuelven
-            for target in _extract_links(body):
-                resolved, _inside = _resolve_link(skill_md, target, skill_dir_abs)
-                if resolved is None:
-                    continue  # Externo, ancla, etc.
-                if not os.path.exists(resolved):
-                    findings.append(_finding(file_rel_full, 'LINK_BROKEN',
-                                            'enlace roto: {}'.format(target)))
-
-    # NAME_DUP: detectar duplicados globales
-    for name, files in name_to_files.items():
-        if len(files) > 1:
-            # Un finding por ocurrencia extra, anclado en el archivo
-            # lexicograficamente posterior
-            files_sorted = sorted(files, key=lambda x: x[0])
-            for i in range(1, len(files_sorted)):
-                file_rel, _entry_path = files_sorted[i]
-                findings.append(_finding(file_rel, 'NAME_DUP',
-                                        'name {} repetido entre skills'.format(name)))
+    findings.extend(_detect_duplicates(name_to_files))
 
     # Ordenar findings por (file, rule)
     findings.sort(key=lambda f: (f['file'], f['rule']))
