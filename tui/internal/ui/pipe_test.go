@@ -189,3 +189,39 @@ func TestInitPipelineScaffold(t *testing.T) {
 		t.Fatalf("scaffolded file should exist at %s: %v", done.path, err)
 	}
 }
+
+// TestLoadDetail_RealContract ejercita el tea.Cmd real devuelto por loadDetail()
+// del wrapper llamandolo directamente como funcion. A diferencia de
+// loadGates/loadScaffold, loadDetail NO shellea a python: lee
+// knowledge/contracts/<task>.md de disco con os.ReadFile (I/O local trivial, no
+// hay logica de negocio que reimplementar). Por eso NO dispara go test ni
+// validate_test_commands -> NO hay recursion con el gate, pero igual se usa
+// maybeSkipPipe para el chdir al repo root (el path es relativo al cwd) y por
+// consistencia con el resto de los pipe tests. Lee un contrato REAL del repo de
+// SOLO LECTURA (no crea ni borra nada): kdd-gates-run-all-json, que existe y no
+// colisiona con nada descartable. Verifica que el contractDetailMsg resultante
+// tiene err == nil, content no vacio, y content contiene "---" (el frontmatter
+// que todo contrato .md del repo tiene).
+func TestLoadDetail_RealContract(t *testing.T) {
+	maybeSkipPipe(t)
+	const task = "kdd-gates-run-all-json"
+	p := program{}
+	cmd := p.loadDetail(task)
+	if cmd == nil {
+		t.Fatalf("loadDetail() returned nil cmd")
+	}
+	msg := cmd()
+	detail, ok := msg.(contractDetailMsg)
+	if !ok {
+		t.Fatalf("cmd() should return contractDetailMsg, got %T", msg)
+	}
+	if detail.err != nil {
+		t.Fatalf("expected nil err reading real contract %s: %v", task, detail.err)
+	}
+	if detail.content == "" {
+		t.Fatalf("expected non-empty content for real contract %s", task)
+	}
+	if !strings.Contains(detail.content, "---") {
+		t.Fatalf("content should contain frontmatter \"---\", got %q", detail.content[:min(40, len(detail.content))])
+	}
+}

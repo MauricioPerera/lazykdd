@@ -6,15 +6,22 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/MauricioPerera/lazykdd/tui/internal/kdd"
 )
 
-// wantHelpLine es el literal EXACTO que View debe agregar al final (salvo
-// quitting). Se declara aca (con otro nombre que el const del paquete) para
-// que el oraculo sea independiente del target: si alguien cambia el literal en
-// model.go, este test lo pega y falla, que es justo lo que debe hacer un
-// oraculo congelado. El const del paquete (helpLine en model.go) NO se usa
-// desde los tests; estos referencian solo a wantHelpLine.
+// wantHelpLine es el literal EXACTO que View debe agregar al final de la vista
+// normal (salvo quitting/scaffolding/detalle). Se declara aca (con otro nombre
+// que el const del paquete) para que el oraculo sea independiente del target:
+// si alguien cambia el literal en model.go, este test lo pega y falla, que es
+// justo lo que debe hacer un oraculo congelado. El const del paquete (helpLine
+// en model.go) NO se usa desde los tests; estos referencian solo a wantHelpLine.
 const wantHelpLine = "\n[g]ates [c]ontracts [r]efresh [n]ew [q]uit"
+
+// wantDetailHelpLine es el literal EXACTO de la linea de ayuda DISTINTA que View
+// agrega al final de la vista de detalle (mismo rol que wantHelpLine pero para
+// la vista de detalle, donde la unica accion es Esc).
+const wantDetailHelpLine = "\n[esc] volver"
 
 // --- UpdateModel: gatesLoadedMsg (comportamiento historico, sin cambios) ---
 
@@ -61,11 +68,18 @@ func TestUpdateModel_GatesLoadedError(t *testing.T) {
 	}
 }
 
-// --- UpdateModel: contractsLoadedMsg (comportamiento historico, sin cambios) ---
+// --- UpdateModel: contractsLoadedMsg (comportamiento historico + items nuevo) ---
+//
+// El comportamiento historico (setear Contracts/ContractsErr/ContractsLoading,
+// preservar gates/ViewMode/Quitting) se preserva intacto. ADEMAS, el handler
+// ahora setea ContractItems desde msg.items y clampea SelectedIndex si queda
+// fuera de rango tras la carga.
 
 // TestUpdateModel_ContractsLoadedSuccess: un contractsLoadedMsg exitoso setea
 // Contracts, limpia ContractsErr, baja ContractsLoading y NO pide comandos.
 // Los campos de gates (Summary/Err/Loading) y Quitting se preservan sin cambios.
+// (Caso historico: el msg no trae items -> ContractItems queda nil, que es
+// valido; el oraculo viejo no aserta sobre items.)
 func TestUpdateModel_ContractsLoadedSuccess(t *testing.T) {
 	m := Model{Summary: "g", Err: nil, Loading: false, Contracts: "", ContractsErr: nil, ContractsLoading: true, ViewMode: "gates", Quitting: false}
 	got, cmd := UpdateModel(m, contractsLoadedMsg{summary: "contracts=2\na: draft\nb: verified", err: nil})
@@ -113,7 +127,114 @@ func TestUpdateModel_ContractsLoadedError(t *testing.T) {
 	}
 }
 
-// --- UpdateModel: scaffoldDoneMsg (nuevo, resultado del shell-out de scaffold) ---
+// TestUpdateModel_ContractsLoaded_SetsItems: el campo items del msg se copia a
+// ContractItems tal cual (en el orden que los entrega ParseContractsStatus, ya
+// alfabetico). SelectedIndex en rango se preserva. cmd nil.
+func TestUpdateModel_ContractsLoaded_SetsItems(t *testing.T) {
+	items := []kdd.ContractStatus{
+		{Task: "a", Lifecycle: "draft"},
+		{Task: "b", Lifecycle: "verified"},
+		{Task: "c", Lifecycle: "implemented"},
+	}
+	m := Model{ContractsLoading: true, SelectedIndex: 1}
+	got, cmd := UpdateModel(m, contractsLoadedMsg{summary: "contracts=3", items: items, err: nil})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if len(got.ContractItems) != 3 {
+		t.Fatalf("ContractItems len: want 3, got %d", len(got.ContractItems))
+	}
+	for i := range items {
+		if got.ContractItems[i] != items[i] {
+			t.Errorf("ContractItems[%d]: want %+v, got %+v", i, items[i], got.ContractItems[i])
+		}
+	}
+	if got.SelectedIndex != 1 {
+		t.Errorf("SelectedIndex in-range should be preserved, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_ContractsLoaded_ClampsSelectedIndex: si la lista se achica y
+// SelectedIndex queda > len-1, se clampea a len-1. cmd nil.
+func TestUpdateModel_ContractsLoaded_ClampsSelectedIndex(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}}
+	m := Model{ContractsLoading: true, SelectedIndex: 5}
+	got, _ := UpdateModel(m, contractsLoadedMsg{summary: "contracts=2", items: items, err: nil})
+	if got.SelectedIndex != 1 {
+		t.Errorf("SelectedIndex should clamp to len-1=1, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_ContractsLoaded_EmptyItemsResetsSelectedIndex: una lista vacia
+// clampea SelectedIndex a 0 (no -1). cmd nil.
+func TestUpdateModel_ContractsLoaded_EmptyItemsResetsSelectedIndex(t *testing.T) {
+	m := Model{ContractsLoading: true, SelectedIndex: 3}
+	got, _ := UpdateModel(m, contractsLoadedMsg{summary: "contracts=0", items: []kdd.ContractStatus{}, err: nil})
+	if got.SelectedIndex != 0 {
+		t.Errorf("SelectedIndex should be 0 for empty list, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_ContractsLoaded_NilItemsResetsSelectedIndex: items nil (ej.
+// el caso historico sin items) tambien deja SelectedIndex en 0.
+func TestUpdateModel_ContractsLoaded_NilItemsResetsSelectedIndex(t *testing.T) {
+	m := Model{ContractsLoading: true, SelectedIndex: 2}
+	got, _ := UpdateModel(m, contractsLoadedMsg{summary: "contracts=0", items: nil, err: nil})
+	if got.SelectedIndex != 0 {
+		t.Errorf("SelectedIndex should be 0 for nil items, got %d", got.SelectedIndex)
+	}
+}
+
+// --- UpdateModel: contractDetailMsg (nuevo) ---
+
+// TestUpdateModel_ContractDetail_Success: un contractDetailMsg sin error setea
+// Detail, limpia DetailErr, baja DetailLoading. ViewingDetail YA era true (lo
+// seteo el Enter) y se PRESERVA. cmd nil.
+func TestUpdateModel_ContractDetail_Success(t *testing.T) {
+	m := Model{ViewingDetail: true, DetailLoading: true, Detail: "", DetailErr: nil, SelectedIndex: 1}
+	got, cmd := UpdateModel(m, contractDetailMsg{content: "---\ntask: x\n---\nbody", err: nil})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.Detail != "---\ntask: x\n---\nbody" {
+		t.Errorf("Detail mismatch: %q", got.Detail)
+	}
+	if got.DetailErr != nil {
+		t.Errorf("DetailErr should be nil, got %v", got.DetailErr)
+	}
+	if got.DetailLoading {
+		t.Errorf("DetailLoading should be false")
+	}
+	if !got.ViewingDetail {
+		t.Errorf("ViewingDetail should stay true")
+	}
+	if got.SelectedIndex != 1 {
+		t.Errorf("SelectedIndex should be preserved, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_ContractDetail_Error: un contractDetailMsg con error setea
+// DetailErr, baja DetailLoading. ViewingDetail se preserva (sigue en detalle
+// para mostrar el error). cmd nil.
+func TestUpdateModel_ContractDetail_Error(t *testing.T) {
+	m := Model{ViewingDetail: true, DetailLoading: true}
+	boom := errors.New("no such file")
+	got, cmd := UpdateModel(m, contractDetailMsg{content: "", err: boom})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.DetailErr != boom {
+		t.Errorf("DetailErr mismatch: want %v, got %v", boom, got.DetailErr)
+	}
+	if got.DetailLoading {
+		t.Errorf("DetailLoading should be false")
+	}
+	if !got.ViewingDetail {
+		t.Errorf("ViewingDetail should stay true (show the error)")
+	}
+}
+
+// --- UpdateModel: scaffoldDoneMsg (comportamiento historico, sin cambios) ---
 
 // TestUpdateModel_ScaffoldDoneSuccess: un scaffoldDoneMsg sin error setea
 // ScaffoldMsg a "creado: <path>". Scaffolding ya era false (se apago al apretar
@@ -156,6 +277,10 @@ func TestUpdateModel_ScaffoldDoneError(t *testing.T) {
 }
 
 // --- UpdateModel: keys (quit + teclas de vista + refresh + nuevo "n") ---
+//
+// Estas teclas funcionan en AMBAS vistas (gates y contracts) cuando NO se esta
+// scaffolding ni viendo detalle - comportamiento historico sin cambios. La
+// navegacion (flechas/Enter) es extra y se testa aparte (solo en contracts).
 
 // TestUpdateModel_KeyQ_Quits: la tecla "q" pone Quitting en true y devuelve
 // tea.Quit como cmd (cmd() produce un tea.QuitMsg).
@@ -226,9 +351,7 @@ func TestUpdateModel_KeyC_SetsContracts(t *testing.T) {
 // debe seguir mostrando el error de la carga anterior mientras espera el nuevo),
 // preserva Summary/Contracts/ViewMode/Quitting sin cambios y devuelve cmd nil.
 // La funcion pura NO sabe shellear: el refresh real (el tea.Batch de
-// loadGates/loadContracts) lo dispara el wiring en program.Update, no aca. Si
-// Loading pasa a true, View ya muestra "cargando..." por la precedencia EXISTENTE
-// (loading > resumen) -- UpdateModel no duplica esa logica.
+// loadGates/loadContracts) lo dispara el wiring en program.Update, no aca.
 func TestUpdateModel_KeyR_Refreshes(t *testing.T) {
 	m := Model{
 		Summary:          "old gates",
@@ -330,7 +453,7 @@ func TestUpdateModel_KeyN_EntersScaffolding(t *testing.T) {
 }
 
 // TestUpdateModel_OtherKey_NoChange: una tecla que no es "q"/"ctrl+c"/"g"/"c"/"r"/"n"
-// no cambia el model ni pide comandos (incluido ViewMode).
+// (ni flecha/Enter en contracts) no cambia el model ni pide comandos.
 func TestUpdateModel_OtherKey_NoChange(t *testing.T) {
 	m := Model{Summary: "s", Err: nil, Loading: true, Quitting: false, ViewMode: "contracts"}
 	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
@@ -375,12 +498,246 @@ func TestUpdateModel_UnknownMsg_NoChange(t *testing.T) {
 	}
 }
 
+// --- UpdateModel: navegacion de la lista de contratos (nuevo) ---
+//
+// Flechas y Enter NAVEGAN solo cuando ViewMode == "contracts" Y !Scaffolding Y
+// !ViewingDetail. En gates view las flechas/Enter no hacen nada (caen al default
+// de las teclas de comando).
+
+// TestUpdateModel_KeyDown_Increments: flecha abajo en contracts incrementa
+// SelectedIndex. cmd nil.
+func TestUpdateModel_KeyDown_Increments(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}, {Task: "c", Lifecycle: "implemented"}}
+	m := Model{ViewMode: "contracts", ContractItems: items, SelectedIndex: 1}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyDown})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.SelectedIndex != 2 {
+		t.Errorf("SelectedIndex should increment to 2, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_KeyDown_ClampsAtBottom: flecha abajo en la ultima fila no da
+// la vuelta: SelectedIndex se queda en len-1. cmd nil.
+func TestUpdateModel_KeyDown_ClampsAtBottom(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}, {Task: "c", Lifecycle: "implemented"}}
+	m := Model{ViewMode: "contracts", ContractItems: items, SelectedIndex: 2}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyDown})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.SelectedIndex != 2 {
+		t.Errorf("SelectedIndex should clamp at len-1=2, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_KeyDown_EmptyList_NoChange: flecha abajo con lista vacia no
+// cambia SelectedIndex (no lo lleva a -1) ni paniquea. cmd nil.
+func TestUpdateModel_KeyDown_EmptyList_NoChange(t *testing.T) {
+	m := Model{ViewMode: "contracts", ContractItems: nil, SelectedIndex: 0}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyDown})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.SelectedIndex != 0 {
+		t.Errorf("SelectedIndex should stay 0 on empty list, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_KeyUp_Decrements: flecha arriba en contracts decrementa
+// SelectedIndex. cmd nil.
+func TestUpdateModel_KeyUp_Decrements(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}, {Task: "c", Lifecycle: "implemented"}}
+	m := Model{ViewMode: "contracts", ContractItems: items, SelectedIndex: 2}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyUp})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.SelectedIndex != 1 {
+		t.Errorf("SelectedIndex should decrement to 1, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_KeyUp_ClampsAtTop: flecha arriba en la primera fila no baja de
+// 0 (no da la vuelta). cmd nil.
+func TestUpdateModel_KeyUp_ClampsAtTop(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}}
+	m := Model{ViewMode: "contracts", ContractItems: items, SelectedIndex: 0}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyUp})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.SelectedIndex != 0 {
+		t.Errorf("SelectedIndex should clamp at 0, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_Arrows_NoEffectInGatesView: en gates view las flechas NO
+// navegan (caen al default de las teclas de comando): SelectedIndex sin cambios.
+func TestUpdateModel_Arrows_NoEffectInGatesView(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}}
+	m := Model{ViewMode: "gates", ContractItems: items, SelectedIndex: 0}
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyUp}, {Type: tea.KeyDown}} {
+		got, cmd := UpdateModel(m, key)
+		if cmd != nil {
+			t.Errorf("expected nil cmd for %v in gates view", key.Type)
+		}
+		if got.SelectedIndex != 0 {
+			t.Errorf("arrows should not navigate in gates view, got %d", got.SelectedIndex)
+		}
+	}
+}
+
+// TestUpdateModel_Enter_ContractsList_Empty_NoAction: Enter con lista vacia no
+// hace nada (no entra en detalle, no paniquea). cmd nil.
+func TestUpdateModel_Enter_ContractsList_Empty_NoAction(t *testing.T) {
+	m := Model{ViewMode: "contracts", ContractItems: nil, SelectedIndex: 0}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.ViewingDetail {
+		t.Errorf("ViewingDetail should stay false on empty list Enter")
+	}
+}
+
+// TestUpdateModel_Enter_ContractsList_NonEmpty_EntersDetail: Enter con lista no
+// vacia entra en ViewingDetail + DetailLoading, limpia Detail/DetailErr. cmd nil
+// (la funcion pura no lee archivos; el loadDetail real lo dispara el wiring).
+func TestUpdateModel_Enter_ContractsList_NonEmpty_EntersDetail(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}}
+	m := Model{ViewMode: "contracts", ContractItems: items, SelectedIndex: 1, Detail: "stale", DetailErr: errors.New("stale err")}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Errorf("expected nil cmd (pure UpdateModel does not read files)")
+	}
+	if !got.ViewingDetail {
+		t.Errorf("ViewingDetail should be true")
+	}
+	if !got.DetailLoading {
+		t.Errorf("DetailLoading should be true")
+	}
+	if got.Detail != "" {
+		t.Errorf("Detail should be cleared, got %q", got.Detail)
+	}
+	if got.DetailErr != nil {
+		t.Errorf("DetailErr should be cleared, got %v", got.DetailErr)
+	}
+	if got.SelectedIndex != 1 {
+		t.Errorf("SelectedIndex should be preserved, got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_Enter_GatesView_NoAction: Enter en gates view no hace nada
+// (no es navegacion aca). cmd nil.
+func TestUpdateModel_Enter_GatesView_NoAction(t *testing.T) {
+	m := Model{ViewMode: "gates", ContractItems: []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}}, SelectedIndex: 0}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.ViewingDetail {
+		t.Errorf("ViewingDetail should stay false in gates view")
+	}
+}
+
+// --- UpdateModel: teclas durante ViewingDetail (nuevo) ---
+//
+// Mientras se ve el detalle, SOLO Esc hace algo (vuelve a la lista
+// preservando SelectedIndex). Cualquier otra tecla (incluidas "q"/"g"/"c"/"r"/
+// "n") se IGNORA: decision de UX explicita, evita que "q" salga del programa
+// entero cuando el usuario solo quiere volver atras.
+
+// TestUpdateModel_Detail_Esc_ReturnsToList_PreservesSelectedIndex: Esc desde el
+// detalle vuelve a la lista (ViewingDetail false, Detail/DetailErr limpios) y
+// PRESERVA SelectedIndex (el cursor no se mueve al salir del detalle). cmd nil.
+func TestUpdateModel_Detail_Esc_ReturnsToList_PreservesSelectedIndex(t *testing.T) {
+	m := Model{ViewingDetail: true, Detail: "---\nx", DetailErr: errors.New("e"), SelectedIndex: 1, ViewMode: "contracts"}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Errorf("expected nil cmd")
+	}
+	if got.ViewingDetail {
+		t.Errorf("ViewingDetail should be false")
+	}
+	if got.Detail != "" {
+		t.Errorf("Detail should be cleared, got %q", got.Detail)
+	}
+	if got.DetailErr != nil {
+		t.Errorf("DetailErr should be cleared, got %v", got.DetailErr)
+	}
+	if got.SelectedIndex != 1 {
+		t.Errorf("SelectedIndex should be preserved (1), got %d", got.SelectedIndex)
+	}
+}
+
+// TestUpdateModel_Detail_Q_Ignored: test EXPLICITO de que "q" durante el detalle
+// NO sale del programa (Quitting se queda false, cmd nil, NO tea.Quit). El
+// usuario debe apretar Esc primero para volver a la lista.
+func TestUpdateModel_Detail_Q_Ignored(t *testing.T) {
+	m := Model{ViewingDetail: true, Quitting: false, ViewMode: "contracts"}
+	got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if cmd != nil {
+		t.Errorf("expected nil cmd (q ignored during detail, no tea.Quit)")
+	}
+	if got.Quitting {
+		t.Errorf("Quitting should stay false (q ignored during detail)")
+	}
+	if !got.ViewingDetail {
+		t.Errorf("ViewingDetail should stay true (q ignored)")
+	}
+}
+
+// TestUpdateModel_Detail_CommandKeys_Ignored: "g"/"c"/"r"/"n" durante el detalle
+// NO hacen nada (ViewMode sin cambios, no entra scaffolding, no refresh de
+// flags). Solo Esc sale del detalle.
+func TestUpdateModel_Detail_CommandKeys_Ignored(t *testing.T) {
+	for _, ch := range []string{"g", "c", "r", "n"} {
+		m := Model{ViewingDetail: true, ViewMode: "contracts", Scaffolding: false, Loading: false, ContractsLoading: false}
+		got, cmd := UpdateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(ch)})
+		if cmd != nil {
+			t.Errorf("key %q: expected nil cmd (ignored during detail)", ch)
+		}
+		if !got.ViewingDetail {
+			t.Errorf("key %q: ViewingDetail should stay true", ch)
+		}
+		if got.ViewMode != "contracts" {
+			t.Errorf("key %q: ViewMode should be unchanged, got %q", ch, got.ViewMode)
+		}
+		if got.Scaffolding {
+			t.Errorf("key %q: should not enter scaffolding during detail", ch)
+		}
+		if got.Loading || got.ContractsLoading {
+			t.Errorf("key %q: should not trigger refresh flags during detail", ch)
+		}
+	}
+}
+
+// TestUpdateModel_Detail_Arrows_Ignored: flechas durante el detalle no mueven el
+// cursor (no estamos en la lista). SelectedIndex sin cambios.
+func TestUpdateModel_Detail_Arrows_Ignored(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}}
+	m := Model{ViewingDetail: true, ViewMode: "contracts", ContractItems: items, SelectedIndex: 0}
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyUp}, {Type: tea.KeyDown}} {
+		got, cmd := UpdateModel(m, key)
+		if cmd != nil {
+			t.Errorf("expected nil cmd for %v during detail", key.Type)
+		}
+		if got.SelectedIndex != 0 {
+			t.Errorf("arrows should not move cursor during detail, got %d", got.SelectedIndex)
+		}
+		if !got.ViewingDetail {
+			t.Errorf("ViewingDetail should stay true")
+		}
+	}
+}
+
 // --- UpdateModel: modo scaffolding (delegacion a handleScaffoldKey) ---
 //
 // En modo scaffolding (m.Scaffolding true) TODA tea.KeyMsg se delega a
 // handleScaffoldKey ANTES del switch de comandos normal: "g"/"c"/"r"/"q" son
-// texto a tipear, NO comandos. UpdateModel solo anade la guarda `if m.Scaffolding`
-// dentro del case tea.KeyMsg (una linea de delegacion, bajo costo) y delega.
+// texto a tipear, NO comandos. Comportamiento historico sin cambios.
 
 // TestUpdateModel_Scaffolding_TypeRunes_Appends: tipear caracteres normales en
 // modo scaffolding appendea a ScaffoldInput. Scaffolding sigue true. cmd nil.
@@ -539,10 +896,9 @@ func TestUpdateModel_Scaffolding_CommandKeysAreText(t *testing.T) {
 
 // --- handleScaffoldKey (helper extraido del target, target secundario) ---
 //
-// handleScaffoldKey fue extraida de UpdateModel por presupuesto de complejidad
-// (UpdateModel estaba en cyclomatic 8/9). No es el target del gate (el gate
-// sigue midiendo solo UpdateModel via signature), pero SI tiene sus propios
-// casos de test en este oraculo congelado.
+// handleScaffoldKey fue extraida de UpdateModel por presupuesto de complejidad.
+// No es el target del gate (el gate sigue midiendo solo UpdateModel via
+// signature), pero SI tiene sus propios casos de test en este oraculo congelado.
 
 // TestHandleScaffoldKey_Runes_Appends: KeyRunes appendea string(key.Runes).
 func TestHandleScaffoldKey_Runes_Appends(t *testing.T) {
@@ -637,7 +993,7 @@ func TestHandleScaffoldKey_Other_NoChange(t *testing.T) {
 
 // TestView_Quitting: devuelve string vacio (Bubble Tea limpia la pantalla al
 // salir; no queremos residuo). Tiene precedencia sobre todo, incluida la linea
-// de ayuda (no se agrega al salir) y el modo scaffolding.
+// de ayuda (no se agrega al salir), el modo scaffolding Y el detalle.
 func TestView_Quitting(t *testing.T) {
 	got := View(Model{Quitting: true, Summary: "whatever", Err: errors.New("e"), Loading: true})
 	if got != "" {
@@ -663,12 +1019,22 @@ func TestView_QuittingPrecedenceOverScaffolding(t *testing.T) {
 	}
 }
 
+// TestView_QuittingPrecedenceOverDetail: quitting gana sobre la vista de detalle
+// (no se muestra el .md al salir).
+func TestView_QuittingPrecedenceOverDetail(t *testing.T) {
+	got := View(Model{Quitting: true, ViewingDetail: true, Detail: "x"})
+	if got != "" {
+		t.Errorf("expected empty string when quitting, got %q", got)
+	}
+}
+
 // TestView_Scaffolding_Prompt: en modo scaffolding View devuelve una vista
 // DISTINTA que reemplaza TODO lo demas (sin helpLine): el prompt exacto + el
 // input tipeado. Sin trailing newline (decision documentada: consistente con
-// kdd.Summarize/SummarizeContractsStatus que tampoco lo llevan).
+// kdd.Summarize/SummarizeContractsStatus que tampoco lo llevan). Precedencia
+// sobre el detalle.
 func TestView_Scaffolding_Prompt(t *testing.T) {
-	got := View(Model{Scaffolding: true, ScaffoldInput: "my-task", Summary: "x", ViewMode: "contracts"})
+	got := View(Model{Scaffolding: true, ScaffoldInput: "my-task", Summary: "x", ViewMode: "contracts", ViewingDetail: true, Detail: "stale"})
 	want := "nuevo contrato (kebab-case), enter confirma, esc cancela:\n> my-task"
 	if got != want {
 		t.Errorf("View scaffolding mismatch: want %q, got %q", want, got)
@@ -730,9 +1096,9 @@ func TestView_DefaultViewModeIsGates(t *testing.T) {
 	}
 }
 
-// --- View: vista de contracts ---
+// --- View: vista de contracts (lista navegable con cursor) ---
 
-// TestView_ContractsError: en ViewMode contracts, error > loading > resumen:
+// TestView_ContractsError: en ViewMode contracts, error > loading > lista:
 // "error: <err>\n" + wantHelpLine.
 func TestView_ContractsError(t *testing.T) {
 	got := View(Model{ViewMode: "contracts", ContractsErr: errors.New("contracts boom"), ContractsLoading: true, Contracts: "x"})
@@ -752,14 +1118,60 @@ func TestView_ContractsLoading(t *testing.T) {
 	}
 }
 
-// TestView_ContractsNormal: en ViewMode contracts sin error ni loading, el
-// resumen de contratos + "\n" + wantHelpLine.
-func TestView_ContractsNormal(t *testing.T) {
-	summary := "contracts=2\na: draft\nb: verified"
-	got := View(Model{ViewMode: "contracts", Contracts: summary})
-	want := summary + "\n" + wantHelpLine
+// TestView_ContractsList_RenderedWithCursor: la vista normal de contracts
+// RENDERIZA la lista desde ContractItems con el cursor "> " en la fila
+// SelectedIndex y "  " en las demas, con header "contracts=<N>". Mantiene el
+// formato "<task>: <lifecycle>" por fila. helpLine al final.
+func TestView_ContractsList_RenderedWithCursor(t *testing.T) {
+	items := []kdd.ContractStatus{
+		{Task: "a", Lifecycle: "draft"},
+		{Task: "b", Lifecycle: "verified"},
+		{Task: "c", Lifecycle: "implemented"},
+	}
+	got := View(Model{ViewMode: "contracts", ContractItems: items, SelectedIndex: 1})
+	want := "contracts=3\n  a: draft\n> b: verified\n  c: implemented\n" + wantHelpLine
 	if got != want {
-		t.Errorf("View contracts normal mismatch: want %q, got %q", want, got)
+		t.Errorf("View contracts list mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_ContractsList_CursorAtTop: el cursor en la primera fila pone "> " ahi.
+func TestView_ContractsList_CursorAtTop(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}}
+	got := View(Model{ViewMode: "contracts", ContractItems: items, SelectedIndex: 0})
+	want := "contracts=2\n> a: draft\n  b: verified\n" + wantHelpLine
+	if got != want {
+		t.Errorf("cursor at top mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_ContractsList_CursorAtBottom: el cursor en la ultima fila.
+func TestView_ContractsList_CursorAtBottom(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}}
+	got := View(Model{ViewMode: "contracts", ContractItems: items, SelectedIndex: 1})
+	want := "contracts=2\n  a: draft\n> b: verified\n" + wantHelpLine
+	if got != want {
+		t.Errorf("cursor at bottom mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_ContractsList_Empty: lista vacia (o nil) -> solo header "contracts=0"
+// + "\n" + wantHelpLine (sin filas, sin cursor).
+func TestView_ContractsList_Empty(t *testing.T) {
+	got := View(Model{ViewMode: "contracts", ContractItems: nil})
+	want := "contracts=0\n" + wantHelpLine
+	if got != want {
+		t.Errorf("empty list mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_ContractsList_SingleElement: un solo elemento con cursor en 0.
+func TestView_ContractsList_SingleElement(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "only", Lifecycle: "draft"}}
+	got := View(Model{ViewMode: "contracts", ContractItems: items, SelectedIndex: 0})
+	want := "contracts=1\n> only: draft\n" + wantHelpLine
+	if got != want {
+		t.Errorf("single element mismatch: want %q, got %q", want, got)
 	}
 }
 
@@ -774,10 +1186,77 @@ func TestView_GatesUnaffectedByContractsFields(t *testing.T) {
 	}
 }
 
-// --- View: linea extra de ScaffoldMsg (nuevo) ---
+// --- View: vista de detalle (nuevo) ---
 
-// TestView_Normal_WithScaffoldMsg_AddsLine: en vista normal (no scaffolding),
-// si ScaffoldMsg != "" se agrega una linea "\n" + ScaffoldMsg ANTES de helpLine.
+// TestView_Detail_Loading: mientras carga el .md, "cargando contrato...\n" (sin
+// helpLine normal).
+func TestView_Detail_Loading(t *testing.T) {
+	got := View(Model{ViewingDetail: true, DetailLoading: true})
+	want := "cargando contrato...\n"
+	if got != want {
+		t.Errorf("detail loading mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_Detail_Error: si loadDetail fallo, "error: <err>" (sin trailing
+// newline, sin helpLine normal).
+func TestView_Detail_Error(t *testing.T) {
+	got := View(Model{ViewingDetail: true, DetailErr: errors.New("no such file")})
+	want := "error: no such file"
+	if got != want {
+		t.Errorf("detail error mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_Detail_Content: el contenido del .md tal cual + la linea de ayuda
+// propia "\n[esc] volver" al final (sin helpLine normal, sin modificar el .md).
+func TestView_Detail_Content(t *testing.T) {
+	content := "---\ntask: x\n---\n# Contract\nbody"
+	got := View(Model{ViewingDetail: true, Detail: content})
+	want := content + wantDetailHelpLine
+	if got != want {
+		t.Errorf("detail content mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_Detail_EmptyContent: contenido vacio (no deberia pasar con un .md
+// real, pero View no paniquea) -> solo la linea de ayuda.
+func TestView_Detail_EmptyContent(t *testing.T) {
+	got := View(Model{ViewingDetail: true, Detail: ""})
+	want := wantDetailHelpLine
+	if got != want {
+		t.Errorf("detail empty content mismatch: want %q, got %q", want, got)
+	}
+}
+
+// TestView_DetailPrecedenceOverContracts: la vista de detalle gana sobre la
+// vista normal de contracts incluso si contracts tiene error de carga: muestra
+// el detalle (loading aca), no el error de contracts.
+func TestView_DetailPrecedenceOverContracts(t *testing.T) {
+	got := View(Model{ViewingDetail: true, DetailLoading: true, ViewMode: "contracts", ContractsErr: errors.New("contracts boom"), ContractsLoading: false})
+	want := "cargando contrato...\n"
+	if got != want {
+		t.Errorf("detail should win over contracts error: want %q, got %q", want, got)
+	}
+}
+
+// TestView_ScaffoldingPrecedenceOverDetail: scaffolding gana sobre el detalle
+// (no se muestra el .md mientras se tipea un nombre nuevo). Cubierto por
+// TestView_Scaffolding_Prompt que pasa ViewingDetail:true; aca un caso extra
+// con buffer vacio.
+func TestView_ScaffoldingPrecedenceOverDetail(t *testing.T) {
+	got := View(Model{Scaffolding: true, ScaffoldInput: "", ViewingDetail: true, Detail: "stale"})
+	want := "nuevo contrato (kebab-case), enter confirma, esc cancela:\n> "
+	if got != want {
+		t.Errorf("scaffolding should win over detail: want %q, got %q", want, got)
+	}
+}
+
+// --- View: linea extra de ScaffoldMsg (solo en vista normal) ---
+
+// TestView_Normal_WithScaffoldMsg_AddsLine: en vista normal (no scaffolding, no
+// detalle), si ScaffoldMsg != "" se agrega una linea "\n" + ScaffoldMsg ANTES
+// de helpLine.
 func TestView_Normal_WithScaffoldMsg_AddsLine(t *testing.T) {
 	summary := "overall_ok=true pass=2 fail=0"
 	got := View(Model{Summary: summary, ScaffoldMsg: "creado: knowledge/contracts/foo.md"})
@@ -787,14 +1266,25 @@ func TestView_Normal_WithScaffoldMsg_AddsLine(t *testing.T) {
 	}
 }
 
-// TestView_Contracts_WithScaffoldMsg_AddsLine: la linea extra de ScaffoldMsg se
-// agrega tambien en la vista de contracts.
-func TestView_Contracts_WithScaffoldMsg_AddsLine(t *testing.T) {
-	summary := "contracts=2\na: draft"
-	got := View(Model{ViewMode: "contracts", Contracts: summary, ScaffoldMsg: "error: bad"})
-	want := summary + "\n" + "\nerror: bad" + wantHelpLine
+// TestView_ContractsList_WithScaffoldMsg_AddsLine: la linea extra de ScaffoldMsg
+// se agrega tambien en la vista de contracts (lista). La lista se renderiza
+// desde ContractItems, no desde Contracts.
+func TestView_ContractsList_WithScaffoldMsg_AddsLine(t *testing.T) {
+	items := []kdd.ContractStatus{{Task: "a", Lifecycle: "draft"}, {Task: "b", Lifecycle: "verified"}}
+	got := View(Model{ViewMode: "contracts", ContractItems: items, SelectedIndex: 0, ScaffoldMsg: "error: bad"})
+	want := "contracts=2\n> a: draft\n  b: verified\n" + "\nerror: bad" + wantHelpLine
 	if got != want {
 		t.Errorf("want %q, got %q", want, got)
+	}
+}
+
+// TestView_Detail_WithScaffoldMsg_NoExtraLine: durante el detalle NO se agrega
+// la linea de ScaffoldMsg (la vista de detalle es propia, devuelve antes).
+func TestView_Detail_WithScaffoldMsg_NoExtraLine(t *testing.T) {
+	got := View(Model{ViewingDetail: true, Detail: "x", ScaffoldMsg: "must not show"})
+	want := "x" + wantDetailHelpLine
+	if got != want {
+		t.Errorf("detail should not show ScaffoldMsg: want %q, got %q", want, got)
 	}
 }
 
