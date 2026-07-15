@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
-"""CLI de KDD (Contrato: kdd-contracts-status-json).
+"""CLI de KDD (Contrato: kdd-gates-run-single-json).
 
 Piel 2 (CLI Python) del proyecto lazykdd: un unico punto de entrada con
-una funcion ``main`` que despacha CUATRO subcomandos y emite JSON:
+una funcion ``main`` que despacha CINCO subcomandos y emite JSON:
 
-  - ``gates run-all --json``   -> motor de gates ya existente
+  - ``gates run-all --json``        -> motor de gates ya existente
     (``scripts/mcp_gate_dispatch.py``).
-  - ``contracts list --json``  -> lista el frontmatter de los contratos de
+  - ``gates run <name> --json``     -> corre UN gate especifico via
+    ``mcp_gate_dispatch.run_gate`` (no los 11 juntos).
+  - ``contracts list --json``       -> lista el frontmatter de los contratos de
     un directorio (``scripts/validate_contracts.py``).
   - ``contracts scaffold <task> --json`` -> crea un nuevo contrato a partir
     de ``TEMPLATE-task-contract.md`` (``scaffold_contract``).
-  - ``contracts status --json`` -> etapa de ciclo de vida de cada contrato
+  - ``contracts status --json``     -> etapa de ciclo de vida de cada contrato
     (``list_contract_status``).
+
+``main`` es un DISPATCHER delgado: un type-check corto por ``argv`` que
+delega cada rama a una funcion handler separada (``_handle_*``). Toda la
+logica real vive en los handlers o en las funciones de modulo
+(``list_contracts_json``/``scaffold_contract``/``list_contract_status``/
+``run_single_gate_json``), no inline en ``main`` -- mismo patron que el
+TUI Go de este repo tras su refactor a dispatcher delgado.
 
 Los modulos hermanos se importan igual que ``scripts/validate_rules.py``
 importa ``rule_engine`` (mismo directorio, sin path hacks mas alla de
@@ -19,6 +28,7 @@ poner ``scripts/`` en ``sys.path``).
 
   Uso:
     python scripts/kdd_cli.py gates run-all --json
+    python scripts/kdd_cli.py gates run <name> --json
     python scripts/kdd_cli.py contracts list --json
     python scripts/kdd_cli.py contracts scaffold <task> --json
     python scripts/kdd_cli.py contracts status --json
@@ -216,85 +226,107 @@ def list_contract_status(contracts_dir='knowledge/contracts',
     return result
 
 
+def run_single_gate_json(gate_name, repo_root='.'):
+    """Corre UN gate especifico via ``mcp_gate_dispatch.run_gate``.
+
+    Devuelve ``{'error': 'unknown gate: ' + gate_name}`` si ``gate_name``
+    NO esta en ``mcp_gate_dispatch.LEVEL1_GATES`` (nombre invalido O es
+    ``'validate_attestation'``, que es local-only y esta deliberadamente
+    excluido de ``LEVEL1_GATES`` -- mismo criterio que ``gates run-all``,
+    que tampoco lo corre). Si es valido, devuelve
+    ``mcp_gate_dispatch.run_gate(gate_name, {}, repo_root=repo_root)`` tal
+    cual (ese dict YA tiene ``'exit_code'``/``'stdout'``/``'stderr'``).
+    """
+    if gate_name not in mcp_gate_dispatch.LEVEL1_GATES:
+        return {'error': 'unknown gate: ' + gate_name}
+    return mcp_gate_dispatch.run_gate(gate_name, {}, repo_root=repo_root)
+
+
+def _handle_gates_run_all(stdout, run_all_fn):
+    """Despacha ``gates run-all --json``: corre ``fn`` y emite su JSON."""
+    fn = run_all_fn if run_all_fn is not None else mcp_gate_dispatch.run_all_level1
+    result = fn(repo_root='.')
+    stdout.write(json.dumps(result))
+    return 0 if result['overall_ok'] is True else 1
+
+
+def _handle_contracts_list(stdout, list_contracts_fn):
+    """Despacha ``contracts list --json``: lista y emite su JSON."""
+    fn = list_contracts_fn if list_contracts_fn is not None else list_contracts_json
+    result = fn(contracts_dir='knowledge/contracts')
+    stdout.write(json.dumps(result))
+    return 0 if isinstance(result, list) else 1
+
+
+def _handle_contracts_scaffold(stdout, task_name, scaffold_fn):
+    """Despacha ``contracts scaffold <task> --json``: crea y emite su JSON."""
+    fn = scaffold_fn if scaffold_fn is not None else scaffold_contract
+    result = fn(task_name)
+    stdout.write(json.dumps(result))
+    return 0 if result.get('created') is True else 1
+
+
+def _handle_contracts_status(stdout, status_fn):
+    """Despacha ``contracts status --json``: ciclo de vida y emite su JSON."""
+    fn = status_fn if status_fn is not None else list_contract_status
+    result = fn()
+    stdout.write(json.dumps(result))
+    return 0 if isinstance(result, list) else 1
+
+
+def _handle_gates_run(stdout, gate_name, run_gate_fn):
+    """Despacha ``gates run <name> --json``: corre un gate y emite su JSON.
+
+    ``fn`` SIEMPRE se llama (a diferencia de los handlers de ``list``/
+    ``scaffold``/``status`` donde el error viene DE la llamada misma, aqui
+    ``fn`` es la que decide si el nombre de gate es invalido y arma el dict
+    de error). Si ``result`` tiene clave ``'error'`` devuelve ``1``; si no,
+    ``0`` si ``result['exit_code'] == 0`` si no ``1``.
+    """
+    fn = run_gate_fn if run_gate_fn is not None else run_single_gate_json
+    result = fn(gate_name, repo_root='.')
+    stdout.write(json.dumps(result))
+    if 'error' in result:
+        return 1
+    return 0 if result['exit_code'] == 0 else 1
+
+
 def main(argv, stdout, run_all_fn=None, list_contracts_fn=None,
-         scaffold_fn=None, status_fn=None):
-    """Despacha el CLI de KDD.
+         scaffold_fn=None, status_fn=None, run_gate_fn=None):
+    """Despacha el CLI de KDD (dispatcher delgado).
 
     ``argv``: lista de argumentos SIN el nombre del programa.
     ``stdout``: stream con ``.write(str)`` (``sys.stdout`` en produccion;
     ``io.StringIO()`` en tests).
-    ``run_all_fn``: callable ``fn(repo_root='.') -> {'overall_ok': bool,
-      'results': {...}}`` inyectable para tests; si es ``None`` se resuelve
-      a ``mcp_gate_dispatch.run_all_level1`` (lookup del atributo en cada
-      llamada, para que monkeypatch en tests funcione).
-    ``list_contracts_fn``: callable ``fn(contracts_dir='knowledge/contracts')
-      -> list[dict] | {'error': ...}`` inyectable para tests; si es ``None``
-      se resuelve a ``list_contracts_json`` (mismo modulo, lookup en cada
-      llamada para que monkeypatch funcione).
-    ``scaffold_fn``: callable ``fn(task_name) -> {'created': True, ...} |
-      {'error': ...}`` inyectable para tests; si es ``None`` se resuelve a
-      ``scaffold_contract`` (mismo modulo, lookup en cada llamada).
-    ``status_fn``: callable ``fn() -> list[dict] | {'error': ...}`` inyectable
-      para tests; si es ``None`` se resuelve a ``list_contract_status``
-      (mismo modulo, lookup en cada llamada).
+    ``run_all_fn``/``list_contracts_fn``/``scaffold_fn``/``status_fn``/
+    ``run_gate_fn``: callables inyectables para tests; si son ``None`` se
+    resuelven a ``mcp_gate_dispatch.run_all_level1`` / ``list_contracts_json``
+    / ``scaffold_contract`` / ``list_contract_status`` /
+    ``run_single_gate_json`` (lookup del atributo en cada llamada, para que
+    monkeypatch en tests funcione).
 
-    - ``argv == ['gates', 'run-all', '--json']``: ejecuta ``fn(repo_root='.')``,
-      escribe ``json.dumps(result)`` (una linea, sin pretty-print) en
-      ``stdout`` y devuelve ``0`` si ``result['overall_ok']`` es ``True``,
-      si no ``1``.
-    - ``argv == ['contracts', 'list', '--json']``: ejecuta
-      ``fn(contracts_dir='knowledge/contracts')``. Si el resultado es una
-      lista (incluida vacia) escribe ``json.dumps(result)`` y devuelve
-      ``0``; si es un dict con clave ``'error'`` escribe
-      ``json.dumps(result)`` y devuelve ``1``.
-    - ``argv == ['contracts', 'scaffold', <task_name>, '--json']`` (4
-      elementos exactos: ``argv[0]=='contracts'``, ``argv[1]=='scaffold'``,
-      ``argv[3]=='--json'``, ``argv[2]`` un string): ejecuta
-      ``fn(argv[2])``. Si ``result`` tiene ``'created': True`` escribe
-      ``json.dumps(result)`` y devuelve ``0``; si tiene clave ``'error'``
-      escribe ``json.dumps(result)`` y devuelve ``1``.
-    - ``argv == ['contracts', 'status', '--json']`` (3 elementos exactos):
-      ejecuta ``fn()``. Si ``result`` es una lista (incluida vacia) escribe
-      ``json.dumps(result)`` y devuelve ``0``; si es un dict con clave
-      ``'error'`` escribe ``json.dumps(result)`` y devuelve ``1``.
-    - cualquier otro ``argv``: escribe un mensaje de uso de UNA linea que
-      empieza con ``usage:`` y menciona los CUATRO subcomandos en ``stdout`` y
-      devuelve ``2``. Ningun ``fn`` se llama en este caso.
-    - nunca lanza una excepcion no controlada por un ``argv`` malformado:
-      el unico parseo es una comparacion de igualdad de listas (y, para
-      scaffold, un chequeo de largo + posiciones + tipo).
+    Cada rama es UNA linea de delegacion a un handler ``_handle_*`` (toda la
+    logica real vive ahi). El match es por igualdad de listas (o, para los
+    subcomandos con argumento libre, por largo + posiciones + tipo). Cualquier
+    otro ``argv`` escribe un mensaje de uso de UNA linea que empieza con
+    ``usage:`` y menciona los CINCO subcomandos, y devuelve ``2`` sin llamar
+    ningun ``fn``. Nunca lanza por un ``argv`` malformado.
     """
     if argv == ['gates', 'run-all', '--json']:
-        fn = run_all_fn if run_all_fn is not None else mcp_gate_dispatch.run_all_level1
-        result = fn(repo_root='.')
-        stdout.write(json.dumps(result))
-        return 0 if result['overall_ok'] is True else 1
+        return _handle_gates_run_all(stdout, run_all_fn)
     if argv == ['contracts', 'list', '--json']:
-        fn = list_contracts_fn if list_contracts_fn is not None else list_contracts_json
-        result = fn(contracts_dir='knowledge/contracts')
-        if isinstance(result, list):
-            stdout.write(json.dumps(result))
-            return 0
-        stdout.write(json.dumps(result))
-        return 1
+        return _handle_contracts_list(stdout, list_contracts_fn)
     if (len(argv) == 4 and argv[0] == 'contracts' and argv[1] == 'scaffold'
             and argv[3] == '--json' and isinstance(argv[2], str)):
-        fn = scaffold_fn if scaffold_fn is not None else scaffold_contract
-        result = fn(argv[2])
-        if result.get('created') is True:
-            stdout.write(json.dumps(result))
-            return 0
-        stdout.write(json.dumps(result))
-        return 1
+        return _handle_contracts_scaffold(stdout, argv[2], scaffold_fn)
     if argv == ['contracts', 'status', '--json']:
-        fn = status_fn if status_fn is not None else list_contract_status
-        result = fn()
-        if isinstance(result, list):
-            stdout.write(json.dumps(result))
-            return 0
-        stdout.write(json.dumps(result))
-        return 1
-    stdout.write('usage: kdd_cli gates run-all --json | contracts list --json '
+        return _handle_contracts_status(stdout, status_fn)
+    if (len(argv) == 4 and argv[0] == 'gates' and argv[1] == 'run'
+            and argv[3] == '--json' and isinstance(argv[2], str)):
+        return _handle_gates_run(stdout, argv[2], run_gate_fn)
+    stdout.write('usage: kdd_cli gates run-all --json '
+                 '| gates run <name> --json '
+                 '| contracts list --json '
                  '| contracts scaffold <task> --json '
                  '| contracts status --json\n')
     return 2

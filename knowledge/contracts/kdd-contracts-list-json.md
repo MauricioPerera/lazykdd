@@ -16,7 +16,7 @@ budget:
   params_max: 4
   lines_max: 50
 tests: "tests/test_kdd_cli.py"
-tests_sha256: "0bafcc414fbcc772724d3d64161cafdfddb31c9069f553cf8673458d765fa6d1"
+tests_sha256: "db8dfc1d5c1d99ef23784174f14f03f500de7e0e0a7c16fbcb9456af32750236"
 touch_only: ['scripts/kdd_cli.py']
 deps_allowed: []
 forbids: ['network', 'llm']

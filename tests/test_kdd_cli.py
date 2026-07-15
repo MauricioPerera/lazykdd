@@ -1,11 +1,13 @@
-"""Oraculo congelado del CLI de KDD (Contrato: kdd-contracts-status-json).
+"""Oraculo congelado del CLI de KDD (Contrato: kdd-gates-run-single-json).
 
 Fija el comportamiento de ``scripts/kdd_cli.py`` -- la Piel 2 (CLI Python)
-del proyecto lazykdd. Cubre CUATRO subcomandos despachados por UNA sola
-funcion:
+del proyecto lazykdd. Cubre CINCO subcomandos despachados por UNA sola
+funcion (un dispatcher delgado que delega cada rama a un handler
+``_handle_*``; toda la logica real vive en los handlers o en las funciones
+de modulo, no inline en ``main``):
 
     main(argv, stdout, run_all_fn=None, list_contracts_fn=None,
-         scaffold_fn=None, status_fn=None) -> int
+         scaffold_fn=None, status_fn=None, run_gate_fn=None) -> int
 
 Reglas del contrato (nombres congelados):
 - ``argv`` es la lista de argumentos SIN el nombre del programa.
@@ -17,6 +19,21 @@ Reglas del contrato (nombres congelados):
     ``stdout`` via ``.write(...)``.
   - devuelve ``0`` si ``result['overall_ok']`` es ``True``, si no ``1``.
   - ``fn`` (run_all_fn) NUNCA se llama si ``argv`` no matchea exactamente.
+- ``argv == ['gates', 'run', <gate_name>, '--json']`` (4 elementos
+  EXACTOS: ``argv[0]=='gates'``, ``argv[1]=='run'``, ``argv[3]=='--json'``;
+  ``argv[2]`` es el nombre de gate, un string):
+  - ``fn = run_gate_fn if run_gate_fn is not None else run_single_gate_json``
+    (default del mismo modulo).
+  - ``result = fn(argv[2], repo_root='.')``. ``fn`` SIEMPRE se llama para
+    este patron (a diferencia de list/scaffold/status): es ``fn`` la que
+    decide si el nombre de gate es invalido y arma el dict de error.
+  - si ``result`` tiene clave ``'error'``: escribe ``json.dumps(result)``,
+    devuelve ``1``.
+  - si no (tiene ``'exit_code'``): escribe ``json.dumps(result)``, devuelve
+    ``0`` si ``result['exit_code'] == 0``, si no ``1``.
+  - ``run_gate_fn`` NUNCA se llama si ``argv`` no matchea exactamente ese
+    patron (largo distinto, subcomandos distintos, falta ``--json``, orden
+    roto, flag extra).
 - ``argv == ['contracts', 'list', '--json']``:
   - ``fn = list_contracts_fn if list_contracts_fn is not None else
     list_contracts_json`` (default del mismo modulo).
@@ -52,11 +69,11 @@ Reglas del contrato (nombres congelados):
   - ``status_fn`` NUNCA se llama si ``argv`` no matchea exactamente.
 - cualquier otro ``argv`` (vacio, --help, desconocido, subset/superset,
   orden roto, flag extra): escribe un mensaje de uso de UNA linea que
-  empieza con ``usage:`` y menciona los CUATRO subcomandos (``gates run-all
-  --json``, ``contracts list --json``, ``contracts scaffold <task> --json``
-  y ``contracts status --json``) en ``stdout``, devuelve ``2``. NINGUN
-  ``fn`` se llama. Nunca lanza una excepcion no controlada por un ``argv``
-  malformado.
+  empieza con ``usage:`` y menciona los CINCO subcomandos (``gates run-all
+  --json``, ``gates run <name> --json``, ``contracts list --json``,
+  ``contracts scaffold <task> --json`` y ``contracts status --json``) en
+  ``stdout``, devuelve ``2``. NINGUN ``fn`` se llama. Nunca lanza una
+  excepcion no controlada por un ``argv`` malformado.
 
 ``scaffold_contract(task_name, contracts_dir='knowledge/contracts',
 template_path='knowledge/contracts/TEMPLATE-task-contract.md') -> dict``:
@@ -86,10 +103,19 @@ existe con ``ok is True``; ``verified = implemented y task y existe
 ``.agents/logs/<task>-REPORT.md``. Devuelve ``[{'task','lifecycle'}, ...]``
 en el orden de ``_collect_files`` (puede ser vacia).
 
+``run_single_gate_json(gate_name, repo_root='.') -> dict``: corre UN gate
+especifico via ``mcp_gate_dispatch.run_gate``. Si ``gate_name`` NO esta en
+``mcp_gate_dispatch.LEVEL1_GATES`` (nombre invalido, o ``'validate_attestation'``
+que es local-only y esta excluido de ``LEVEL1_GATES`` -- mismo criterio que
+``gates run-all``) devuelve ``{'error': 'unknown gate: ' + gate_name}`` SIN
+llamar a ``mcp_gate_dispatch.run_gate``. Si es valido, devuelve
+``mcp_gate_dispatch.run_gate(gate_name, {}, repo_root=repo_root)`` tal cual
+(ese dict YA tiene ``'exit_code'``/``'stdout'``/``'stderr'``).
+
 Los tests NUNCA invocan subprocess real contra el repo ni tocan red: para
-``gates``/``list``/``scaffold`` siempre inyectan un ``*_fn`` fake (lambda
-que devuelve un literal); el caso ``None`` se ejercita monkeypatcheando el
-modulo (``mcp_gate_dispatch`` / ``kdd_cli``) con un fake. Los tests que
+``gates run``/``run-all``/``list``/``scaffold`` siempre inyectan un ``*_fn``
+fake (lambda que devuelve un literal); el caso ``None`` se ejercita
+monkeypatcheando el modulo (``mcp_gate_dispatch`` / ``kdd_cli``) con un fake. Los tests que
 ejercitan ``scaffold_contract`` y ``list_contract_status`` directo usan
 SIEMPRE un ``tempfile.mkdtemp()`` (contratos sinteticos, ``test_command``
 fake tipo ``python -c "import sys; sys.exit(0/1)"`` y un ``.agents/logs/``
@@ -132,6 +158,9 @@ _STATUS_TWO = [
     {"task": "b", "lifecycle": "verified"},
 ]
 _STATUS_ERR = {"error": "contracts dir not found: knowledge/contracts"}
+_GATE_OK = {"exit_code": 0, "stdout": "ok\n", "stderr": ""}
+_GATE_FAIL = {"exit_code": 1, "stdout": "", "stderr": "boom"}
+_GATE_ERR = {"error": "unknown gate: does-not-exist"}
 
 _REAL_TEMPLATE = os.path.join(ROOT, "knowledge", "contracts",
                               "TEMPLATE-task-contract.md")
@@ -140,6 +169,12 @@ _REAL_TEMPLATE = os.path.join(ROOT, "knowledge", "contracts",
 def _list_fn(payload):
     """Construye un list_contracts_fn fake que ignora su argumento."""
     return lambda contracts_dir="knowledge/contracts": payload
+
+
+def _run_gate_fn(payload):
+    """Construye un run_gate_fn fake que ignora sus argumentos
+    (``gate_name`` y ``repo_root``)."""
+    return lambda gate_name, repo_root=".": payload
 
 
 def _scaffold_fn(payload):
@@ -349,6 +384,279 @@ class TestDefaultRunAllFn(unittest.TestCase):
             self.assertEqual(json.loads(out.getvalue()), _JSON_OK)
         finally:
             mcp_gate_dispatch.run_all_level1 = original
+
+
+class TestGatesRunSingleJson(unittest.TestCase):
+    """Caso valido: ``['gates', 'run', <name>, '--json']`` con fn inyectado.
+
+    El handler SIEMPRE llama a ``fn`` para este patron: es ``fn`` la que
+    decide si el nombre es invalido y arma el dict de error. Los fakes
+    devuelven literales (``_GATE_OK``/``_GATE_FAIL``/``_GATE_ERR``).
+    """
+
+    def test_valid_exit_0_returns_0(self):
+        out = io.StringIO()
+        rc = main(["gates", "run", "validate_contracts", "--json"], out,
+                  run_gate_fn=_run_gate_fn(_GATE_OK))
+        self.assertEqual(rc, 0)
+
+    def test_valid_exit_0_writes_exact_json(self):
+        out = io.StringIO()
+        main(["gates", "run", "validate_contracts", "--json"], out,
+             run_gate_fn=_run_gate_fn(_GATE_OK))
+        self.assertEqual(json.loads(out.getvalue()), _GATE_OK)
+
+    def test_valid_single_line_no_pretty_print(self):
+        out = io.StringIO()
+        main(["gates", "run", "validate_contracts", "--json"], out,
+             run_gate_fn=_run_gate_fn(_GATE_OK))
+        self.assertNotIn("\n", out.getvalue())
+
+    def test_valid_exit_nonzero_returns_1(self):
+        out = io.StringIO()
+        rc = main(["gates", "run", "validate_contracts", "--json"], out,
+                  run_gate_fn=_run_gate_fn(_GATE_FAIL))
+        self.assertEqual(rc, 1)
+
+    def test_valid_exit_nonzero_writes_json(self):
+        out = io.StringIO()
+        main(["gates", "run", "validate_contracts", "--json"], out,
+             run_gate_fn=_run_gate_fn(_GATE_FAIL))
+        self.assertEqual(json.loads(out.getvalue()), _GATE_FAIL)
+
+    def test_fn_called_with_gate_name_and_repo_root(self):
+        calls = []
+
+        def fake(gate_name, repo_root="."):
+            calls.append((gate_name, repo_root))
+            return _GATE_OK
+
+        out = io.StringIO()
+        main(["gates", "run", "validate_changelog", "--json"], out,
+             run_gate_fn=fake)
+        self.assertEqual(calls, [("validate_changelog", ".")])
+
+    def test_fn_result_round_trips_as_json(self):
+        out = io.StringIO()
+        payload = {"exit_code": 0, "stdout": "x\ny\n", "stderr": ""}
+        main(["gates", "run", "validate_contracts", "--json"], out,
+             run_gate_fn=_run_gate_fn(payload))
+        self.assertEqual(json.loads(out.getvalue()), payload)
+
+    def test_error_result_returns_1(self):
+        out = io.StringIO()
+        rc = main(["gates", "run", "validate_contracts", "--json"], out,
+                  run_gate_fn=_run_gate_fn(_GATE_ERR))
+        self.assertEqual(rc, 1)
+
+    def test_error_result_writes_json(self):
+        out = io.StringIO()
+        main(["gates", "run", "validate_contracts", "--json"], out,
+             run_gate_fn=_run_gate_fn(_GATE_ERR))
+        self.assertEqual(json.loads(out.getvalue()), _GATE_ERR)
+
+    def test_error_not_swallowed_as_success(self):
+        out = io.StringIO()
+        rc = main(["gates", "run", "validate_contracts", "--json"], out,
+                  run_gate_fn=_run_gate_fn(_GATE_ERR))
+        self.assertNotEqual(rc, 0)
+
+    def test_missing_json_flag_is_usage(self):
+        out = io.StringIO()
+        rc = main(["gates", "run", "validate_contracts"], out,
+                  run_gate_fn=_run_gate_fn(_GATE_OK))
+        self.assertEqual(rc, 2)
+        self.assertTrue(out.getvalue().startswith("usage:"))
+
+    def test_wrong_flag_is_usage(self):
+        out = io.StringIO()
+        rc = main(["gates", "run", "validate_contracts", "--yaml"], out,
+                  run_gate_fn=_run_gate_fn(_GATE_OK))
+        self.assertEqual(rc, 2)
+
+    def test_wrong_order_is_usage(self):
+        out = io.StringIO()
+        rc = main(["gates", "run", "--json", "validate_contracts"], out,
+                  run_gate_fn=_run_gate_fn(_GATE_OK))
+        self.assertEqual(rc, 2)
+
+    def test_extra_arg_is_usage(self):
+        out = io.StringIO()
+        rc = main(["gates", "run", "validate_contracts", "--json", "extra"],
+                  out, run_gate_fn=_run_gate_fn(_GATE_OK))
+        self.assertEqual(rc, 2)
+
+    def test_subset_two_words_is_usage(self):
+        out = io.StringIO()
+        rc = main(["gates", "run"], out, run_gate_fn=_run_gate_fn(_GATE_OK))
+        self.assertEqual(rc, 2)
+
+    def test_subset_three_words_is_usage(self):
+        out = io.StringIO()
+        rc = main(["gates", "run", "validate_contracts"], out,
+                  run_gate_fn=_run_gate_fn(_GATE_OK))
+        self.assertEqual(rc, 2)
+
+    def test_run_gate_fn_never_called_on_invalid_argv(self):
+        called = []
+
+        def fake(gate_name, repo_root="."):
+            called.append(gate_name)
+            return _GATE_OK
+
+        out = io.StringIO()
+        main(["gates", "run"], out, run_gate_fn=fake)
+        main(["gates", "run", "validate_contracts"], out, run_gate_fn=fake)
+        main(["gates", "run", "validate_contracts", "--yaml"], out,
+             run_gate_fn=fake)
+        main(["gates", "run", "--json", "validate_contracts"], out,
+             run_gate_fn=fake)
+        main(["gates", "run", "validate_contracts", "--json", "extra"], out,
+             run_gate_fn=fake)
+        self.assertEqual(called, [])
+
+    def test_run_all_distinct_from_run(self):
+        # ``['gates', 'run-all', '--json']`` NO dispara el handler de ``run``:
+        # usa ``run_all_fn``, no ``run_gate_fn``.
+        gate_called = []
+        out = io.StringIO()
+        rc = main(["gates", "run-all", "--json"], out,
+                  run_all_fn=lambda repo_root=".": _JSON_OK,
+                  run_gate_fn=lambda gate_name, repo_root=".":
+                      gate_called.append(gate_name) or _GATE_OK)
+        self.assertEqual(rc, 0)
+        self.assertEqual(gate_called, [])
+
+
+class TestDefaultRunGateFn(unittest.TestCase):
+    """``run_gate_fn=None`` resuelve a ``kdd_cli.run_single_gate_json``.
+
+    Se ejercita con un nombre de gate valido (miembro de
+    ``LEVEL1_GATES``) monkeypatcheando ``mcp_gate_dispatch.run_gate`` con un
+    fake que devuelve un literal -- sin subprocess real.
+    """
+
+    def test_none_fn_valid_gate_delegates_to_run_single_gate_json(self):
+        original = mcp_gate_dispatch.run_gate
+        calls = []
+
+        def fake_run_gate(tool_name, params, repo_root=".", timeout=120):
+            calls.append((tool_name, params, repo_root))
+            return _GATE_OK
+
+        mcp_gate_dispatch.run_gate = fake_run_gate
+        try:
+            out = io.StringIO()
+            rc = main(["gates", "run", "validate_changelog", "--json"], out,
+                      run_gate_fn=None)
+            self.assertEqual(rc, 0)
+            self.assertEqual(json.loads(out.getvalue()), _GATE_OK)
+            self.assertEqual(calls, [("validate_changelog", {}, ".")])
+        finally:
+            mcp_gate_dispatch.run_gate = original
+
+    def test_none_fn_valid_gate_exit_nonzero_returns_1(self):
+        original = mcp_gate_dispatch.run_gate
+        mcp_gate_dispatch.run_gate = (
+            lambda tool_name, params, repo_root=".", timeout=120: _GATE_FAIL)
+        try:
+            out = io.StringIO()
+            rc = main(["gates", "run", "validate_changelog", "--json"], out,
+                      run_gate_fn=None)
+            self.assertEqual(rc, 1)
+            self.assertEqual(json.loads(out.getvalue()), _GATE_FAIL)
+        finally:
+            mcp_gate_dispatch.run_gate = original
+
+
+class TestRunSingleGateJsonDirect(unittest.TestCase):
+    """``run_single_gate_json`` directo -- sin subprocess real.
+
+    Un nombre invalido (o ``'validate_attestation'``) devuelve el dict de
+    error SIN llamar a ``mcp_gate_dispatch.run_gate`` (verificado con un fake
+    contador). Un nombre valido delega a ``mcp_gate_dispatch.run_gate``.
+    """
+
+    def test_unknown_gate_returns_error(self):
+        original = mcp_gate_dispatch.run_gate
+        calls = []
+
+        def fake_run_gate(tool_name, params, repo_root=".", timeout=120):
+            calls.append(tool_name)
+            return _GATE_OK
+
+        mcp_gate_dispatch.run_gate = fake_run_gate
+        try:
+            rc = kdd_cli.run_single_gate_json("does-not-exist")
+            self.assertEqual(rc, {"error": "unknown gate: does-not-exist"})
+            self.assertEqual(calls, [])
+        finally:
+            mcp_gate_dispatch.run_gate = original
+
+    def test_unknown_gate_via_main_run_gate_never_called(self):
+        # via ``main`` con ``run_gate_fn=None`` (default real): un nombre
+        # inventado -> error, exit 1, y ``mcp_gate_dispatch.run_gate`` NUNCA
+        # se llama.
+        original = mcp_gate_dispatch.run_gate
+        calls = []
+
+        def fake_run_gate(tool_name, params, repo_root=".", timeout=120):
+            calls.append(tool_name)
+            return _GATE_OK
+
+        mcp_gate_dispatch.run_gate = fake_run_gate
+        try:
+            out = io.StringIO()
+            rc = main(["gates", "run", "nombre-inventado-que-no-existe",
+                       "--json"], out, run_gate_fn=None)
+            self.assertEqual(rc, 1)
+            self.assertEqual(
+                json.loads(out.getvalue()),
+                {"error": "unknown gate: nombre-inventado-que-no-existe"})
+            self.assertEqual(calls, [])
+        finally:
+            mcp_gate_dispatch.run_gate = original
+
+    def test_validate_attestation_treated_as_invalid(self):
+        # ``validate_attestation`` es local-only: NO esta en LEVEL1_GATES,
+        # mismo camino que un nombre inventado (error que lo nombra), sin
+        # llamar a ``mcp_gate_dispatch.run_gate``.
+        original = mcp_gate_dispatch.run_gate
+        calls = []
+
+        def fake_run_gate(tool_name, params, repo_root=".", timeout=120):
+            calls.append(tool_name)
+            return _GATE_OK
+
+        mcp_gate_dispatch.run_gate = fake_run_gate
+        try:
+            out = io.StringIO()
+            rc = main(["gates", "run", "validate_attestation", "--json"], out,
+                      run_gate_fn=None)
+            self.assertEqual(rc, 1)
+            self.assertEqual(
+                json.loads(out.getvalue()),
+                {"error": "unknown gate: validate_attestation"})
+            self.assertEqual(calls, [])
+        finally:
+            mcp_gate_dispatch.run_gate = original
+
+    def test_valid_gate_delegates_to_run_gate(self):
+        original = mcp_gate_dispatch.run_gate
+        calls = []
+
+        def fake_run_gate(tool_name, params, repo_root=".", timeout=120):
+            calls.append((tool_name, params, repo_root))
+            return _GATE_OK
+
+        mcp_gate_dispatch.run_gate = fake_run_gate
+        try:
+            rc = kdd_cli.run_single_gate_json("validate_contracts",
+                                              repo_root=".")
+            self.assertEqual(rc, _GATE_OK)
+            self.assertEqual(calls, [("validate_contracts", {}, ".")])
+        finally:
+            mcp_gate_dispatch.run_gate = original
 
 
 class TestContractsListJson(unittest.TestCase):
@@ -979,20 +1287,22 @@ class TestStatusRealDefaultViaMain(unittest.TestCase):
 class TestInvalidArgv(unittest.TestCase):
     """Cualquier otro ``argv`` -> mensaje de uso (``usage:``) + exit 2.
 
-    El mensaje debe mencionar los CUATRO subcomandos disponibles.
+    El mensaje debe mencionar los CINCO subcomandos disponibles.
     """
 
     def _assert_usage(self, argv, run_all_fn=None, list_contracts_fn=None,
-                      scaffold_fn=None, status_fn=None):
+                      scaffold_fn=None, status_fn=None, run_gate_fn=None):
         out = io.StringIO()
         rc = main(argv, out, run_all_fn=run_all_fn,
                   list_contracts_fn=list_contracts_fn, scaffold_fn=scaffold_fn,
-                  status_fn=status_fn)
+                  status_fn=status_fn, run_gate_fn=run_gate_fn)
         self.assertEqual(rc, 2, msg="argv={!r}".format(argv))
         msg = out.getvalue()
         self.assertTrue(msg.startswith("usage:"),
                         msg="argv={!r} -> {!r}".format(argv, msg))
         self.assertIn("gates run-all --json", msg,
+                      msg="argv={!r} -> {!r}".format(argv, msg))
+        self.assertIn("gates run <name> --json", msg,
                       msg="argv={!r} -> {!r}".format(argv, msg))
         self.assertIn("contracts list --json", msg,
                       msg="argv={!r} -> {!r}".format(argv, msg))
@@ -1149,6 +1459,73 @@ class TestInvalidArgv(unittest.TestCase):
         self.assertEqual(run_called, [])
         self.assertEqual(list_called, [])
         self.assertEqual(scaffold_called, [])
+
+    def test_gates_run_subset_one_word(self):
+        self._assert_usage(["gates"])
+
+    def test_gates_run_subset_two_words(self):
+        self._assert_usage(["gates", "run"])
+
+    def test_gates_run_missing_json_flag(self):
+        self._assert_usage(["gates", "run", "validate_contracts"])
+
+    def test_gates_run_wrong_flag(self):
+        self._assert_usage(["gates", "run", "validate_contracts", "--yaml"])
+
+    def test_gates_run_wrong_order(self):
+        self._assert_usage(["gates", "run", "--json", "validate_contracts"])
+
+    def test_gates_run_superset_extra_arg(self):
+        self._assert_usage(["gates", "run", "validate_contracts", "--json",
+                            "extra"])
+
+    def test_run_gate_fn_never_called_on_invalid_argv(self):
+        called = []
+
+        def fake(gate_name, repo_root="."):
+            called.append(gate_name)
+            return _GATE_OK
+
+        self._assert_usage([], run_gate_fn=fake)
+        self._assert_usage(["gates", "run"], run_gate_fn=fake)
+        self._assert_usage(["gates", "run", "validate_contracts"],
+                           run_gate_fn=fake)
+        self._assert_usage(["gates", "run", "validate_contracts", "--yaml"],
+                           run_gate_fn=fake)
+        self._assert_usage(["gates", "run", "--json", "validate_contracts"],
+                           run_gate_fn=fake)
+        self._assert_usage(["gates", "run", "validate_contracts", "--json",
+                            "extra"], run_gate_fn=fake)
+        self.assertEqual(called, [])
+
+    def test_neither_of_four_fn_called_on_invalid_argv(self):
+        run_called = []
+        list_called = []
+        scaffold_called = []
+        gate_called = []
+
+        def rf(repo_root="."):
+            run_called.append(True)
+            return _JSON_OK
+
+        def lf(contracts_dir="knowledge/contracts"):
+            list_called.append(True)
+            return []
+
+        def sf(task_name):
+            scaffold_called.append(True)
+            return _CREATED
+
+        def gf(gate_name, repo_root="."):
+            gate_called.append(True)
+            return _GATE_OK
+
+        self._assert_usage(["frobnicate"], run_all_fn=rf, list_contracts_fn=lf,
+                           scaffold_fn=sf, run_gate_fn=gf)
+        self.assertEqual(run_called, [])
+        self.assertEqual(list_called, [])
+        self.assertEqual(scaffold_called, [])
+        self.assertEqual(gate_called, [])
 
 
 if __name__ == "__main__":
