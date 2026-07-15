@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""CLI de KDD (Contrato: kdd-contracts-scaffold-json).
+"""CLI de KDD (Contrato: kdd-contracts-status-json).
 
 Piel 2 (CLI Python) del proyecto lazykdd: un unico punto de entrada con
-una funcion ``main`` que despacha TRES subcomandos y emite JSON:
+una funcion ``main`` que despacha CUATRO subcomandos y emite JSON:
 
   - ``gates run-all --json``   -> motor de gates ya existente
     (``scripts/mcp_gate_dispatch.py``).
@@ -10,8 +10,10 @@ una funcion ``main`` que despacha TRES subcomandos y emite JSON:
     un directorio (``scripts/validate_contracts.py``).
   - ``contracts scaffold <task> --json`` -> crea un nuevo contrato a partir
     de ``TEMPLATE-task-contract.md`` (``scaffold_contract``).
+  - ``contracts status --json`` -> etapa de ciclo de vida de cada contrato
+    (``list_contract_status``).
 
-Ambos modulos hermanos se importan igual que ``scripts/validate_rules.py``
+Los modulos hermanos se importan igual que ``scripts/validate_rules.py``
 importa ``rule_engine`` (mismo directorio, sin path hacks mas alla de
 poner ``scripts/`` en ``sys.path``).
 
@@ -19,6 +21,7 @@ poner ``scripts/`` en ``sys.path``).
     python scripts/kdd_cli.py gates run-all --json
     python scripts/kdd_cli.py contracts list --json
     python scripts/kdd_cli.py contracts scaffold <task> --json
+    python scripts/kdd_cli.py contracts status --json
 """
 
 import json
@@ -29,6 +32,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mcp_gate_dispatch  # noqa: E402
 import validate_contracts  # noqa: E402
+import validate_test_commands  # noqa: E402
 
 
 _KEBAB_RE = re.compile(r'^[a-z0-9]+(-[a-z0-9]+)*$')
@@ -136,8 +140,84 @@ def scaffold_contract(task_name, contracts_dir='knowledge/contracts',
     return {'created': True, 'path': target_path}
 
 
+def list_contract_status(contracts_dir='knowledge/contracts',
+                         repo_root='.'):
+    """Devuelve la etapa de ciclo de vida de cada contrato como list[dict].
+
+    Etapas (la mas alta que cumple, en orden): ``draft`` < ``validated`` <
+    ``implemented`` < ``verified``.
+
+    - ``validate_contracts._collect_files(contracts_dir)`` da los ``*.md``
+      (excluye ``TEMPLATE-*.md``, orden alfabetico). Si devuelve ``None``
+      (directorio inexistente) -> ``{'error': 'contracts dir not found: '
+      + contracts_dir}``.
+    - Corre ``validate_test_commands.run_all(contracts_dir, repo_root)``
+      UNA sola vez (ya recorre todos los ``test_command`` reales) y arma
+      ``{path: item}`` para lookup O(1).
+    - Por cada archivo (mismo orden que ``_collect_files``):
+      1. Lee el texto, ``parse_frontmatter`` -> ``fm``; ``task =
+         fm.get('task', '') if fm else ''``.
+      2. ``findings = validate_contracts.validate_file(path,
+         repo_root=repo_root)``; ``validated = not any(f.level ==
+         'ERROR' for f in findings)``.
+      3. ``implemented = validated and (path en run_all) and
+         item['ok'] is True`` (un contrato ausente de ``run_all`` -- p.
+         ej. ``test_command`` vacio -- NO es ``implemented``).
+      4. ``verified = implemented and task and os.path.isfile(
+         .agents/logs/<task>-REPORT.md bajo repo_root)``.
+      5. Etapa mas alta que cumple; agrega ``{'task': task, 'lifecycle':
+         <etapa>}``.
+    - Devuelve la lista (puede quedar vacia si no hay contratos).
+    """
+    files = validate_contracts._collect_files(contracts_dir)
+    if files is None:
+        return {'error': 'contracts dir not found: ' + contracts_dir}
+    # ``run_all`` ejecuta los ``test_command`` reales via subprocess que
+    # heredan los fds 1/2 del proceso; su stdout/stderr contaminarian el JSON
+    # que el CLI emite en stdout. Los silenciamos a nivel de fd (no a nivel de
+    # sys.stdout, que los hijos bypass) solo durante la corrida, restaurando
+    # despues para que la salida del CLI sea exactamente el JSON.
+    saved_out = os.dup(1)
+    saved_err = os.dup(2)
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull, 1)
+        os.dup2(devnull, 2)
+        run_results = validate_test_commands.run_all(contracts_dir, repo_root)
+    finally:
+        os.dup2(saved_out, 1)
+        os.dup2(saved_err, 2)
+        os.close(devnull)
+        os.close(saved_out)
+        os.close(saved_err)
+    by_path = {item['path']: item for item in run_results}
+    result = []
+    for path in files:
+        with open(path, 'r', encoding='utf-8') as fh:
+            text = fh.read()
+        fm, _ = validate_contracts.parse_frontmatter(text)
+        task = fm.get('task', '') if fm else ''
+        findings = validate_contracts.validate_file(path, repo_root=repo_root)
+        validated = not any(f.level == 'ERROR' for f in findings)
+        item = by_path.get(path)
+        implemented = validated and item is not None and item['ok'] is True
+        report_path = os.path.join(repo_root, '.agents', 'logs',
+                                   task + '-REPORT.md')
+        verified = implemented and bool(task) and os.path.isfile(report_path)
+        if verified:
+            lifecycle = 'verified'
+        elif implemented:
+            lifecycle = 'implemented'
+        elif validated:
+            lifecycle = 'validated'
+        else:
+            lifecycle = 'draft'
+        result.append({'task': task, 'lifecycle': lifecycle})
+    return result
+
+
 def main(argv, stdout, run_all_fn=None, list_contracts_fn=None,
-         scaffold_fn=None):
+         scaffold_fn=None, status_fn=None):
     """Despacha el CLI de KDD.
 
     ``argv``: lista de argumentos SIN el nombre del programa.
@@ -154,6 +234,9 @@ def main(argv, stdout, run_all_fn=None, list_contracts_fn=None,
     ``scaffold_fn``: callable ``fn(task_name) -> {'created': True, ...} |
       {'error': ...}`` inyectable para tests; si es ``None`` se resuelve a
       ``scaffold_contract`` (mismo modulo, lookup en cada llamada).
+    ``status_fn``: callable ``fn() -> list[dict] | {'error': ...}`` inyectable
+      para tests; si es ``None`` se resuelve a ``list_contract_status``
+      (mismo modulo, lookup en cada llamada).
 
     - ``argv == ['gates', 'run-all', '--json']``: ejecuta ``fn(repo_root='.')``,
       escribe ``json.dumps(result)`` (una linea, sin pretty-print) en
@@ -170,8 +253,12 @@ def main(argv, stdout, run_all_fn=None, list_contracts_fn=None,
       ``fn(argv[2])``. Si ``result`` tiene ``'created': True`` escribe
       ``json.dumps(result)`` y devuelve ``0``; si tiene clave ``'error'``
       escribe ``json.dumps(result)`` y devuelve ``1``.
+    - ``argv == ['contracts', 'status', '--json']`` (3 elementos exactos):
+      ejecuta ``fn()``. Si ``result`` es una lista (incluida vacia) escribe
+      ``json.dumps(result)`` y devuelve ``0``; si es un dict con clave
+      ``'error'`` escribe ``json.dumps(result)`` y devuelve ``1``.
     - cualquier otro ``argv``: escribe un mensaje de uso de UNA linea que
-      empieza con ``usage:`` y menciona los TRES subcomandos en ``stdout`` y
+      empieza con ``usage:`` y menciona los CUATRO subcomandos en ``stdout`` y
       devuelve ``2``. Ningun ``fn`` se llama en este caso.
     - nunca lanza una excepcion no controlada por un ``argv`` malformado:
       el unico parseo es una comparacion de igualdad de listas (y, para
@@ -199,8 +286,17 @@ def main(argv, stdout, run_all_fn=None, list_contracts_fn=None,
             return 0
         stdout.write(json.dumps(result))
         return 1
+    if argv == ['contracts', 'status', '--json']:
+        fn = status_fn if status_fn is not None else list_contract_status
+        result = fn()
+        if isinstance(result, list):
+            stdout.write(json.dumps(result))
+            return 0
+        stdout.write(json.dumps(result))
+        return 1
     stdout.write('usage: kdd_cli gates run-all --json | contracts list --json '
-                 '| contracts scaffold <task> --json\n')
+                 '| contracts scaffold <task> --json '
+                 '| contracts status --json\n')
     return 2
 
 

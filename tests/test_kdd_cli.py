@@ -1,11 +1,11 @@
-"""Oraculo congelado del CLI de KDD (Contrato: kdd-contracts-scaffold-json).
+"""Oraculo congelado del CLI de KDD (Contrato: kdd-contracts-status-json).
 
 Fija el comportamiento de ``scripts/kdd_cli.py`` -- la Piel 2 (CLI Python)
-del proyecto lazykdd. Cubre TRES subcomandos despachados por UNA sola
+del proyecto lazykdd. Cubre CUATRO subcomandos despachados por UNA sola
 funcion:
 
     main(argv, stdout, run_all_fn=None, list_contracts_fn=None,
-         scaffold_fn=None) -> int
+         scaffold_fn=None, status_fn=None) -> int
 
 Reglas del contrato (nombres congelados):
 - ``argv`` es la lista de argumentos SIN el nombre del programa.
@@ -40,12 +40,23 @@ Reglas del contrato (nombres congelados):
   - ``scaffold_fn`` NUNCA se llama si ``argv`` no matchea exactamente ese
     patron (largo distinto, subcomandos distintos, falta ``--json``, orden
     roto, flag extra).
+- ``argv == ['contracts', 'status', '--json']`` (3 elementos EXACTOS):
+  - ``fn = status_fn if status_fn is not None else list_contract_status``
+    (default del mismo modulo).
+  - ``result = fn()`` (sin argumentos).
+  - si ``result`` es una lista (incluida vacia): escribe
+    ``json.dumps(result)`` (una sola linea, sin pretty-print), devuelve
+    ``0``. Una lista vacia es exito, NO error.
+  - si ``result`` es un dict con clave ``'error'``: escribe
+    ``json.dumps(result)``, devuelve ``1``.
+  - ``status_fn`` NUNCA se llama si ``argv`` no matchea exactamente.
 - cualquier otro ``argv`` (vacio, --help, desconocido, subset/superset,
   orden roto, flag extra): escribe un mensaje de uso de UNA linea que
-  empieza con ``usage:`` y menciona los TRES subcomandos (``gates run-all
-  --json``, ``contracts list --json`` y ``contracts scaffold <task>
-  --json``) en ``stdout``, devuelve ``2``. NINGUN ``fn`` se llama. Nunca
-  lanza una excepcion no controlada por un ``argv`` malformado.
+  empieza con ``usage:`` y menciona los CUATRO subcomandos (``gates run-all
+  --json``, ``contracts list --json``, ``contracts scaffold <task> --json``
+  y ``contracts status --json``) en ``stdout``, devuelve ``2``. NINGUN
+  ``fn`` se llama. Nunca lanza una excepcion no controlada por un ``argv``
+  malformado.
 
 ``scaffold_contract(task_name, contracts_dir='knowledge/contracts',
 template_path='knowledge/contracts/TEMPLATE-task-contract.md') -> dict``:
@@ -63,16 +74,29 @@ template_path='knowledge/contracts/TEMPLATE-task-contract.md') -> dict``:
   placeholders ``<...>`` quedan intactos. Escribe el contenido en
   ``target_path`` y devuelve ``{'created': True, 'path': target_path}``.
 
-Los tests NUNCA invocan subprocess real ni tocan red: siempre inyectan un
-``run_all_fn``/``list_contracts_fn``/``scaffold_fn`` fake (lambda que
-devuelve un literal) para los casos validos; el caso ``None`` se ejercita
-monkeypatcheando el modulo (``mcp_gate_dispatch`` / ``kdd_cli``) con un
-fake. Los tests que ejercitan ``scaffold_contract`` directo usan SIEMPRE
-un ``tempfile.mkdtemp()`` para ``contracts_dir``/``template_path`` (nunca
-escriben en ``knowledge/contracts/`` real). Un UNICO test dedicado verifica
-el default real via ``main`` chdir-eando a un tempdir (nunca contra el
-repo). Sin subprocess real ni red ni filesystem real del repo dentro de un
-test.
+``list_contract_status(contracts_dir='knowledge/contracts',
+repo_root='.') -> list[dict] | dict``: etapa de ciclo de vida
+(``draft`` < ``validated`` < ``implemented`` < ``verified``) de cada
+contrato. Usa ``validate_contracts._collect_files`` (``None`` si la dir no
+existe -> ``{'error': 'contracts dir not found: ' + contracts_dir}``),
+corre ``validate_test_commands.run_all`` UNA vez y arma ``{path: item}``.
+Por cada archivo: ``task`` del frontmatter (``''`` si no hay); ``validated
+= no hay finding ERROR``; ``implemented = validated y el item de run_all
+existe con ``ok is True``; ``verified = implemented y task y existe
+``.agents/logs/<task>-REPORT.md``. Devuelve ``[{'task','lifecycle'}, ...]``
+en el orden de ``_collect_files`` (puede ser vacia).
+
+Los tests NUNCA invocan subprocess real contra el repo ni tocan red: para
+``gates``/``list``/``scaffold`` siempre inyectan un ``*_fn`` fake (lambda
+que devuelve un literal); el caso ``None`` se ejercita monkeypatcheando el
+modulo (``mcp_gate_dispatch`` / ``kdd_cli``) con un fake. Los tests que
+ejercitan ``scaffold_contract`` y ``list_contract_status`` directo usan
+SIEMPRE un ``tempfile.mkdtemp()`` (contratos sinteticos, ``test_command``
+fake tipo ``python -c "import sys; sys.exit(0/1)"`` y un ``.agents/logs/``
+sintetico dentro del mismo tempdir) -- NUNCA contra ``knowledge/contracts/``
+real. Un UNICO test dedicado verifica el default real via ``main``
+chdir-eando a un tempdir (nunca contra el repo). Sin subprocess contra el
+repo real, ni red, ni filesystem real del repo dentro de un test.
 """
 
 import io
@@ -89,6 +113,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import mcp_gate_dispatch  # noqa: E402
 import kdd_cli  # noqa: E402
+import validate_contracts  # noqa: E402
 from kdd_cli import main  # noqa: E402
 
 _JSON_OK = {"overall_ok": True, "results": {}}
@@ -101,6 +126,12 @@ _TWO = [
 ]
 _CREATED = {"created": True, "path": "knowledge/contracts/x.md"}
 _SCAFFOLD_ERR = {"error": "invalid task name (must be kebab-case): Bad"}
+_STATUS_ONE = [{"task": "a", "lifecycle": "draft"}]
+_STATUS_TWO = [
+    {"task": "a", "lifecycle": "draft"},
+    {"task": "b", "lifecycle": "verified"},
+]
+_STATUS_ERR = {"error": "contracts dir not found: knowledge/contracts"}
 
 _REAL_TEMPLATE = os.path.join(ROOT, "knowledge", "contracts",
                               "TEMPLATE-task-contract.md")
@@ -130,6 +161,122 @@ def _make_tmpdir_with_template():
     with open(template_path, "w", encoding="utf-8") as fh:
         fh.write(tmpl)
     return tmp, template_path
+
+
+def _status_fn(payload):
+    """Construye un status_fn fake que ignora su argumento (no recibe ninguno)."""
+    return lambda: payload
+
+
+def _valid_contract_text(task, test_command, tests_rel, tests_hash):
+    """Frontmatter+body de un contrato sintetico que pasa ``validate_file``.
+
+    ``target``/``tests`` resuelven a archivos que el test crea en el tempdir;
+    ``tests_sha256`` es el hash real del archivo de tests (calculado con
+    ``validate_contracts._calculate_tests_hash``). Las secciones obligatorias
+    estan todas presentes con la forma que exige el validador (Examples con
+    >=2 items, Constraints con 'PARAR y reportar si').
+    """
+    return (
+        "---\n"
+        "type: 'Task Contract'\n"
+        "title: 'synth'\n"
+        "description: 'synth'\n"
+        "tags: ['synth']\n"
+        "\n"
+        "task: {task}\n"
+        "intent: \"Hacer algo puntual.\"\n"
+        "target: scripts/{task}.py\n"
+        "signature: \"def f(x) -> int:\"\n"
+        "test_command: '{cmd}'\n"
+        "test_cwd: .\n"
+        "budget:\n"
+        "  cyclomatic_max: 5\n"
+        "  nesting_max: 2\n"
+        "  params_max: 2\n"
+        "  lines_max: 20\n"
+        "tests: {tests}\n"
+        "tests_sha256: '{hsh}'\n"
+        "touch_only: ['scripts/{task}.py']\n"
+        "deps_allowed: []\n"
+        "forbids: ['network', 'llm']\n"
+        "---\n"
+        "\n"
+        "# Contract: synth\n"
+        "\n"
+        "## Intent\n"
+        "Hacer algo puntual.\n"
+        "\n"
+        "## Interface\n"
+        "```python\n"
+        "def f(x) -> int:\n"
+        "    ...\n"
+        "```\n"
+        "\n"
+        "## Invariants\n"
+        "- ``f`` no lanza.\n"
+        "\n"
+        "## Examples\n"
+        "- ``f(1)`` -> ``1``.\n"
+        "- ``f(2)`` -> ``2``.\n"
+        "\n"
+        "## Do / Don't\n"
+        "- DO: mantenerlo simple.\n"
+        "\n"
+        "## Tests\n"
+        "Tests en ``{tests}``.\n"
+        "\n"
+        "## Constraints\n"
+        "- PARAR y reportar si algo falla.\n"
+    ).format(task=task, cmd=test_command, tests=tests_rel, hsh=tests_hash)
+
+
+def _write_valid_contract(repo, task, test_exit=0, with_report=False):
+    """Escribe un contrato sintetico valido bajo ``repo`` y devuelve su path.
+
+    Crea tambien ``repo/scripts/<task>.py`` (target) y ``repo/tests/test_<task>.py``
+    (oraculo, cuyo hash se sella en el contrato). Opcionalmente crea
+    ``repo/.agents/logs/<task>-REPORT.md`` (para la etapa ``verified``).
+    """
+    contracts_dir = os.path.join(repo, "knowledge", "contracts")
+    os.makedirs(contracts_dir, exist_ok=True)
+    os.makedirs(os.path.join(repo, "scripts"), exist_ok=True)
+    os.makedirs(os.path.join(repo, "tests"), exist_ok=True)
+    target_path = os.path.join(repo, "scripts", task + ".py")
+    with open(target_path, "w", encoding="utf-8") as fh:
+        fh.write("def f(x):\n    return x\n")
+    tests_rel = "tests/test_{}.py".format(task)
+    tests_abs = os.path.join(repo, tests_rel)
+    with open(tests_abs, "w", encoding="utf-8") as fh:
+        fh.write("import unittest\n")
+    tests_hash = validate_contracts._calculate_tests_hash(tests_abs)
+    test_command = 'python -c "import sys; sys.exit({})"'.format(test_exit)
+    text = _valid_contract_text(task, test_command, tests_rel, tests_hash)
+    contract_path = os.path.join(contracts_dir, task + ".md")
+    with open(contract_path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    if with_report:
+        logs_dir = os.path.join(repo, ".agents", "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+        with open(os.path.join(logs_dir, task + "-REPORT.md"),
+                  "w", encoding="utf-8") as fh:
+            fh.write("# Report\n")
+    return contract_path
+
+
+def _write_draft_contract(repo, task):
+    """Escribe un contrato sintetico INVALIDO (falla ``validate_file``).
+
+    Solo tiene ``task`` en el frontmatter (sin ``test_command`` ni claves
+    requeridas): ``validate_file`` emite ERRORs -> ``validated`` False ->
+    etapa ``draft``. No aparece en ``run_all`` (sin ``test_command``).
+    """
+    contracts_dir = os.path.join(repo, "knowledge", "contracts")
+    os.makedirs(contracts_dir, exist_ok=True)
+    text = "---\ntask: {task}\n---\n\n# {task}\n".format(task=task)
+    with open(os.path.join(contracts_dir, task + ".md"),
+              "w", encoding="utf-8") as fh:
+        fh.write(text)
 
 
 class TestGatesRunAllJson(unittest.TestCase):
@@ -588,17 +735,259 @@ class TestScaffoldContractDirect(unittest.TestCase):
         self.assertIn("already exists", rc["error"])
 
 
+class TestContractsStatusJson(unittest.TestCase):
+    """Caso valido: ``['contracts', 'status', '--json']`` con fn inyectado."""
+
+    def test_status_returns_0(self):
+        out = io.StringIO()
+        rc = main(["contracts", "status", "--json"], out,
+                  status_fn=_status_fn(_STATUS_ONE))
+        self.assertEqual(rc, 0)
+
+    def test_status_writes_exact_json(self):
+        out = io.StringIO()
+        main(["contracts", "status", "--json"], out,
+             status_fn=_status_fn(_STATUS_ONE))
+        self.assertEqual(json.loads(out.getvalue()), _STATUS_ONE)
+
+    def test_status_single_line_no_pretty_print(self):
+        out = io.StringIO()
+        main(["contracts", "status", "--json"], out,
+             status_fn=_status_fn(_STATUS_TWO))
+        self.assertNotIn("\n", out.getvalue())
+
+    def test_status_empty_list_returns_0(self):
+        out = io.StringIO()
+        rc = main(["contracts", "status", "--json"], out,
+                  status_fn=_status_fn([]))
+        self.assertEqual(rc, 0)
+
+    def test_status_empty_list_writes_literal_brackets(self):
+        out = io.StringIO()
+        main(["contracts", "status", "--json"], out, status_fn=_status_fn([]))
+        self.assertEqual(out.getvalue(), "[]")
+
+    def test_status_empty_list_is_success_not_error(self):
+        out = io.StringIO()
+        rc = main(["contracts", "status", "--json"], out,
+                  status_fn=_status_fn([]))
+        self.assertEqual(rc, 0)
+
+    def test_status_fn_called_with_no_args(self):
+        calls = []
+
+        def fake():
+            calls.append(())
+            return _STATUS_ONE
+
+        out = io.StringIO()
+        main(["contracts", "status", "--json"], out, status_fn=fake)
+        self.assertEqual(calls, [()])
+
+    def test_status_two_items_round_trips(self):
+        out = io.StringIO()
+        main(["contracts", "status", "--json"], out,
+             status_fn=_status_fn(_STATUS_TWO))
+        self.assertEqual(json.loads(out.getvalue()), _STATUS_TWO)
+
+    def test_status_error_dict_returns_1(self):
+        out = io.StringIO()
+        rc = main(["contracts", "status", "--json"], out,
+                  status_fn=_status_fn(_STATUS_ERR))
+        self.assertEqual(rc, 1)
+
+    def test_status_error_dict_writes_json(self):
+        out = io.StringIO()
+        main(["contracts", "status", "--json"], out,
+             status_fn=_status_fn(_STATUS_ERR))
+        self.assertEqual(json.loads(out.getvalue()), _STATUS_ERR)
+
+    def test_status_error_not_swallowed_as_list(self):
+        out = io.StringIO()
+        rc = main(["contracts", "status", "--json"], out,
+                  status_fn=_status_fn(_STATUS_ERR))
+        self.assertNotEqual(rc, 0)
+
+    def test_status_missing_json_flag_is_usage(self):
+        out = io.StringIO()
+        rc = main(["contracts", "status"], out, status_fn=_status_fn(_STATUS_ONE))
+        self.assertEqual(rc, 2)
+        self.assertTrue(out.getvalue().startswith("usage:"))
+
+    def test_status_wrong_flag_is_usage(self):
+        out = io.StringIO()
+        rc = main(["contracts", "status", "--yaml"], out,
+                  status_fn=_status_fn(_STATUS_ONE))
+        self.assertEqual(rc, 2)
+
+    def test_status_extra_arg_is_usage(self):
+        out = io.StringIO()
+        rc = main(["contracts", "status", "--json", "extra"], out,
+                  status_fn=_status_fn(_STATUS_ONE))
+        self.assertEqual(rc, 2)
+
+    def test_status_fn_never_called_on_invalid_argv(self):
+        called = []
+
+        def fake():
+            called.append(True)
+            return _STATUS_ONE
+
+        out = io.StringIO()
+        main(["contracts", "status"], out, status_fn=fake)
+        main(["contracts", "status", "--yaml"], out, status_fn=fake)
+        main(["contracts", "status", "--json", "extra"], out, status_fn=fake)
+        main([], out, status_fn=fake)
+        self.assertEqual(called, [])
+
+
+class TestDefaultStatusFn(unittest.TestCase):
+    """``status_fn=None`` resuelve a ``kdd_cli.list_contract_status`` (fake)."""
+
+    def test_none_fn_uses_module_list_contract_status(self):
+        original = kdd_cli.list_contract_status
+
+        def fake():
+            return _STATUS_ONE
+
+        kdd_cli.list_contract_status = fake
+        try:
+            out = io.StringIO()
+            rc = main(["contracts", "status", "--json"], out, status_fn=None)
+            self.assertEqual(rc, 0)
+            self.assertEqual(json.loads(out.getvalue()), _STATUS_ONE)
+        finally:
+            kdd_cli.list_contract_status = original
+
+
+class TestListContractStatusDirect(unittest.TestCase):
+    """``list_contract_status`` directo contra un tempdir (nunca el repo real).
+
+    Cada contrato sintetico usa ``test_command`` fake ``python -c "import
+    sys; sys.exit(0/1)"`` y un ``.agents/logs/`` sintetico dentro del mismo
+    tempdir. NUNCA contra ``knowledge/contracts/`` real.
+    """
+
+    def setUp(self):
+        self.repo = tempfile.mkdtemp()
+        self.contracts_dir = os.path.join(self.repo, "knowledge", "contracts")
+
+    def tearDown(self):
+        shutil.rmtree(self.repo, ignore_errors=True)
+
+    def _status(self):
+        return kdd_cli.list_contract_status(contracts_dir=self.contracts_dir,
+                                             repo_root=self.repo)
+
+    def test_dir_not_found_returns_error(self):
+        rc = kdd_cli.list_contract_status(
+            contracts_dir=os.path.join(self.repo, "nope"), repo_root=self.repo)
+        self.assertIn("error", rc)
+        self.assertIn("contracts dir not found", rc["error"])
+
+    def test_empty_dir_returns_empty_list(self):
+        os.makedirs(self.contracts_dir, exist_ok=True)
+        self.assertEqual(self._status(), [])
+
+    def test_draft_stage(self):
+        _write_draft_contract(self.repo, "draft-x")
+        status = self._status()
+        self.assertEqual(len(status), 1)
+        self.assertEqual(status[0], {"task": "draft-x", "lifecycle": "draft"})
+
+    def test_validated_stage(self):
+        _write_valid_contract(self.repo, "val-x", test_exit=1)
+        status = self._status()
+        self.assertEqual(status[0], {"task": "val-x", "lifecycle": "validated"})
+
+    def test_implemented_stage(self):
+        _write_valid_contract(self.repo, "impl-x", test_exit=0, with_report=False)
+        status = self._status()
+        self.assertEqual(status[0],
+                         {"task": "impl-x", "lifecycle": "implemented"})
+
+    def test_verified_stage(self):
+        _write_valid_contract(self.repo, "ver-x", test_exit=0, with_report=True)
+        status = self._status()
+        self.assertEqual(status[0], {"task": "ver-x", "lifecycle": "verified"})
+
+    def test_result_items_have_only_task_and_lifecycle(self):
+        _write_valid_contract(self.repo, "keys-x", test_exit=0, with_report=True)
+        for item in self._status():
+            self.assertEqual(set(item.keys()), {"task", "lifecycle"})
+
+    def test_order_is_alphabetical(self):
+        _write_valid_contract(self.repo, "zeta", test_exit=0)
+        _write_valid_contract(self.repo, "alpha", test_exit=0)
+        _write_draft_contract(self.repo, "mid")
+        tasks = [item["task"] for item in self._status()]
+        self.assertEqual(tasks, ["alpha", "mid", "zeta"])
+
+    def test_multiple_stages_combined(self):
+        _write_draft_contract(self.repo, "a-draft")
+        _write_valid_contract(self.repo, "b-validated", test_exit=1)
+        _write_valid_contract(self.repo, "c-implemented", test_exit=0)
+        _write_valid_contract(self.repo, "d-verified", test_exit=0,
+                              with_report=True)
+        by_task = {item["task"]: item["lifecycle"] for item in self._status()}
+        self.assertEqual(by_task["a-draft"], "draft")
+        self.assertEqual(by_task["b-validated"], "validated")
+        self.assertEqual(by_task["c-implemented"], "implemented")
+        self.assertEqual(by_task["d-verified"], "verified")
+
+    def test_verified_requires_report_file(self):
+        # implemented pero SIN report -> implemented, no verified
+        _write_valid_contract(self.repo, "no-report", test_exit=0,
+                              with_report=False)
+        status = self._status()
+        self.assertEqual(status[0]["lifecycle"], "implemented")
+
+    def test_validated_required_for_implemented(self):
+        # test_command exit 0 pero contrato invalido -> draft (no validated)
+        _write_draft_contract(self.repo, "bad")
+        status = self._status()
+        self.assertEqual(status[0]["lifecycle"], "draft")
+
+
+class TestStatusRealDefaultViaMain(unittest.TestCase):
+    """UN test: el default real (``list_contract_status``) via ``main``, contra
+    un tempdir (chdir). NUNCA contra el repo real. Solo aserta estructura.
+    """
+
+    def test_real_default_returns_list_with_task_and_lifecycle(self):
+        repo = tempfile.mkdtemp()
+        orig_cwd = os.getcwd()
+        try:
+            _write_valid_contract(repo, "real-status-x", test_exit=0,
+                                  with_report=True)
+            os.chdir(repo)
+            out = io.StringIO()
+            rc = main(["contracts", "status", "--json"], out, status_fn=None)
+            self.assertEqual(rc, 0)
+            data = json.loads(out.getvalue())
+            self.assertIsInstance(data, list)
+            self.assertGreater(len(data), 0)
+            allowed = {"draft", "validated", "implemented", "verified"}
+            for item in data:
+                self.assertEqual(set(item.keys()), {"task", "lifecycle"})
+                self.assertIn(item["lifecycle"], allowed)
+        finally:
+            os.chdir(orig_cwd)
+            shutil.rmtree(repo, ignore_errors=True)
+
+
 class TestInvalidArgv(unittest.TestCase):
     """Cualquier otro ``argv`` -> mensaje de uso (``usage:``) + exit 2.
 
-    El mensaje debe mencionar los TRES subcomandos disponibles.
+    El mensaje debe mencionar los CUATRO subcomandos disponibles.
     """
 
     def _assert_usage(self, argv, run_all_fn=None, list_contracts_fn=None,
-                      scaffold_fn=None):
+                      scaffold_fn=None, status_fn=None):
         out = io.StringIO()
         rc = main(argv, out, run_all_fn=run_all_fn,
-                  list_contracts_fn=list_contracts_fn, scaffold_fn=scaffold_fn)
+                  list_contracts_fn=list_contracts_fn, scaffold_fn=scaffold_fn,
+                  status_fn=status_fn)
         self.assertEqual(rc, 2, msg="argv={!r}".format(argv))
         msg = out.getvalue()
         self.assertTrue(msg.startswith("usage:"),
@@ -608,6 +997,8 @@ class TestInvalidArgv(unittest.TestCase):
         self.assertIn("contracts list --json", msg,
                       msg="argv={!r} -> {!r}".format(argv, msg))
         self.assertIn("contracts scaffold <task> --json", msg,
+                      msg="argv={!r} -> {!r}".format(argv, msg))
+        self.assertIn("contracts status --json", msg,
                       msg="argv={!r} -> {!r}".format(argv, msg))
 
     def test_empty(self):
