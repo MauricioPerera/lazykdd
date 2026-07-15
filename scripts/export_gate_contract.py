@@ -329,6 +329,50 @@ def _rewrite_test_command(test_command_orig, tests_orig: str,
 # Funcion principal del contrato
 # ---------------------------------------------------------------------------
 
+def _read_and_extract(contract_path):
+    """Lee el contrato (UTF-8), normaliza saltos de linea, parsea el
+    frontmatter y extrae las claves escalares task/target/tests/
+    test_command_orig. Devuelve (fm_lines, body, task, target, tests,
+    test_command_orig). Lanza ValueError si falta frontmatter o alguna clave
+    requerida (mismos mensajes que el orquestador original)."""
+    with open(contract_path, "r", encoding="utf-8") as fh:
+        raw = fh.read()
+    raw = raw.replace("\r\n", "\n").replace("\r", "\n")
+
+    fm_lines, body = _split_frontmatter(raw)
+    if fm_lines is None:
+        raise ValueError(
+            "frontmatter no encontrado o no delimitado por '---': {}".format(
+                contract_path))
+
+    task, _ = _scalar_value(fm_lines, "task")
+    target, _ = _scalar_value(fm_lines, "target")
+    tests, _ = _scalar_value(fm_lines, "tests")
+    test_command_orig, _ = _scalar_value(fm_lines, "test_command")
+    missing = [k for k, v in (("task", task), ("target", target), ("tests", tests))
+               if v is None or v == ""]
+    if missing:
+        raise ValueError(
+            "clave(s) requerida(s) ausente(s) en el frontmatter: {}".format(
+                ", ".join(missing)))
+    return fm_lines, body, task, target, tests, test_command_orig
+
+
+def _apply_rewrites(fm_lines, target_rw, tests_rw, test_command_rw):
+    """Devuelve una copia de fm_lines con target/tests/test_command reescritos
+    donde corresponda (test_command solo si su valor reescrito no es None).
+    Logica identica a la del orquestador original."""
+    new_fm = list(fm_lines)
+    for key, new_val in (("target", target_rw), ("tests", tests_rw),
+                         ("test_command", test_command_rw)):
+        if new_val is None:
+            continue
+        idx = _key_line_index(new_fm, key)
+        if idx >= 0:
+            new_fm[idx] = _replace_scalar_line(new_fm[idx], new_val)
+    return new_fm
+
+
 def export_gate_contract(contract_path: str, out_dir: str,
                           repo_root: str = ".") -> str:
     """Lee el contrato KDD (UTF-8), emite ``<out_dir>/<task>.gate.md``
@@ -363,26 +407,8 @@ def export_gate_contract(contract_path: str, out_dir: str,
     unidades: un ``relpath`` entre ``C:`` y ``D:`` no existe); el CLI lo mapea
     a exit 1 (I/O), no a contrato invalido.
     """
-    with open(contract_path, "r", encoding="utf-8") as fh:
-        raw = fh.read()
-    raw = raw.replace("\r\n", "\n").replace("\r", "\n")
-
-    fm_lines, body = _split_frontmatter(raw)
-    if fm_lines is None:
-        raise ValueError(
-            "frontmatter no encontrado o no delimitado por '---': {}".format(
-                contract_path))
-
-    task, _ = _scalar_value(fm_lines, "task")
-    target, _ = _scalar_value(fm_lines, "target")
-    tests, _ = _scalar_value(fm_lines, "tests")
-    test_command_orig, _ = _scalar_value(fm_lines, "test_command")
-    missing = [k for k, v in (("task", task), ("target", target), ("tests", tests))
-               if v is None or v == ""]
-    if missing:
-        raise ValueError(
-            "clave(s) requerida(s) ausente(s) en el frontmatter: {}".format(
-                ", ".join(missing)))
+    (fm_lines, body, task, target, tests,
+     test_command_orig) = _read_and_extract(contract_path)
 
     repo_root_abs = os.path.abspath(repo_root)
     out_dir_abs = os.path.abspath(out_dir)
@@ -398,17 +424,7 @@ def export_gate_contract(contract_path: str, out_dir: str,
     test_command_rw = _rewrite_test_command(test_command_orig, tests,
                                              tests_rw, target_rw)
 
-    # Reemplazar las lineas de target, tests y test_command en el frontmatter
-    # crudo. test_command solo se reescribe si la clave existe; el resto del
-    # frontmatter va verbatim.
-    new_fm = list(fm_lines)
-    for key, new_val in (("target", target_rw), ("tests", tests_rw),
-                         ("test_command", test_command_rw)):
-        if new_val is None:
-            continue
-        idx = _key_line_index(new_fm, key)
-        if idx >= 0:
-            new_fm[idx] = _replace_scalar_line(new_fm[idx], new_val)
+    new_fm = _apply_rewrites(fm_lines, target_rw, tests_rw, test_command_rw)
 
     text = "\n".join(["---"] + new_fm + ["---"]) + "\n" + body
     normalized = _ascii_normalize(text)
