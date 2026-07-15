@@ -60,6 +60,11 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Set up Go (Piel 3, TUI -- tui/go.mod pins 1.26.4)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+
       - name: Validate contracts
         run: python scripts/validate_contracts.py ${{ inputs.contracts_dir || 'knowledge/contracts' }}
 
@@ -99,16 +104,19 @@ jobs:
       - name: Run unit tests (2/2)
         run: python -m unittest discover -s tests -p "test_*.py"
 
-      - name: Run project test suite
-        # This step is separate from the two above on purpose: those validate the KDD
-        # tooling itself (scripts/*.py) and stay Python forever, regardless of your
-        # project's language. THIS step is a placeholder for YOUR project's own tests.
-        # Swap the command below for your language's runner (e.g. `npm test`,
-        # `cargo test`, `go test ./...`) once your project has its own tests; add
-        # `actions/setup-node`/`actions/setup-go`/etc. above if your runtime needs setup.
-        # Left as a no-op echo by default so a clean fork of the template stays green
-        # without editing anything and the Python suite is not run a third time.
-        run: echo "No project-specific test runner configured yet. Replace this step's command with your language's test runner (e.g. npm test, cargo test, go test ./...) once your project has its own tests."
+      - name: Run project test suite (Go, Piel 3 -- TUI)
+        # This step is separate from the two Python steps above on purpose: those
+        # validate the KDD tooling itself (scripts/*.py) and stay Python forever.
+        # THIS step is lazykdd's own project test suite. `go test ./...` from
+        # `tui/` runs 100% pure (the real pipe tests in tui/internal/ui/pipe_test.go
+        # are opt-in via LAZYKDD_RUN_PIPE, unset here on purpose -- they shell out to
+        # `python scripts/kdd_cli.py ...`, which would re-run every gate including
+        # this same test_command, a needless recursive round-trip in CI). The build
+        # step below is the actual end-to-end smoke: it fails loudly if the TUI
+        # doesn't compile.
+        run: |
+          go -C tui test ./...
+          go -C tui build -o lazykdd .
 
       - name: Assemble context (smoke)
         run: python scripts/assemble_context.py ccdd/context.json "smoke"
