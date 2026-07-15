@@ -270,6 +270,46 @@ def _scan_rule_files(rules_dir):
     return sorted(e for e in entries if e.endswith(".rules.json"))
 
 
+def _finding(filename, rule, msg):
+    """Construye un finding ERROR estandar (file, level, rule, msg)."""
+    return {"file": filename, "level": "ERROR", "rule": rule, "msg": msg}
+
+
+def _validate_one_ruleset(filename, filepath, rules_dir):
+    """Valida un rule-set individual. Devuelve la lista de findings
+    [{'file','level','rule','msg'}] (puede estar vacia). No lanza."""
+    findings = []
+
+    # JSON parseable
+    ruleset, err = _validate_json(filepath)
+    if ruleset is None:
+        findings.append(_finding(filename, "JSON", "not parseable: {}".format(err)))
+        return findings
+
+    if not isinstance(ruleset, dict):
+        findings.append(_finding(filename, "JSON", "must be a dict"))
+        return findings
+
+    # 7 checkers, en orden: familia, golden_presence, golden_file,
+    # golden_frozen, golden_forma, code_only, repro
+    for rule, msg in _validate_familia(ruleset):
+        findings.append(_finding(filename, rule, msg))
+    for rule, msg in _validate_golden_presence(ruleset):
+        findings.append(_finding(filename, rule, msg))
+    for rule, msg in _validate_golden_file(ruleset, rules_dir):
+        findings.append(_finding(filename, rule, msg))
+    for rule, msg in _validate_golden_frozen(ruleset, rules_dir):
+        findings.append(_finding(filename, rule, msg))
+    for rule, msg in _validate_golden_forma(ruleset, rules_dir):
+        findings.append(_finding(filename, rule, msg))
+    for rule, msg in _validate_code_only(ruleset):
+        findings.append(_finding(filename, rule, msg))
+    for rule, msg in _validate_repro(ruleset, rules_dir):
+        findings.append(_finding(filename, rule, msg))
+
+    return findings
+
+
 def validate_rules(rules_dir: str) -> list:
     """Valida todos los *.rules.json bajo rules_dir. Devuelve findings
     [{'file','level','rule','msg'}] ordenados (archivo, regla); vacia si todo es
@@ -286,89 +326,7 @@ def validate_rules(rules_dir: str) -> list:
     # Procesar cada rule-set
     for filename in rule_files:
         filepath = os.path.join(rules_dir, filename)
-
-        # JSON parseable
-        ruleset, err = _validate_json(filepath)
-        if ruleset is None:
-            findings.append({
-                "file": filename,
-                "level": "ERROR",
-                "rule": "JSON",
-                "msg": "not parseable: {}".format(err)
-            })
-            continue
-
-        if not isinstance(ruleset, dict):
-            findings.append({
-                "file": filename,
-                "level": "ERROR",
-                "rule": "JSON",
-                "msg": "must be a dict"
-            })
-            continue
-
-        # FAMILIA
-        for rule, msg in _validate_familia(ruleset):
-            findings.append({
-                "file": filename,
-                "level": "ERROR",
-                "rule": rule,
-                "msg": msg
-            })
-
-        # GOLDEN (presencia)
-        for rule, msg in _validate_golden_presence(ruleset):
-            findings.append({
-                "file": filename,
-                "level": "ERROR",
-                "rule": rule,
-                "msg": msg
-            })
-
-        # GOLDEN (archivo existe y parseable)
-        for rule, msg in _validate_golden_file(ruleset, rules_dir):
-            findings.append({
-                "file": filename,
-                "level": "ERROR",
-                "rule": rule,
-                "msg": msg
-            })
-
-        # GOLDEN_FROZEN (hash)
-        for rule, msg in _validate_golden_frozen(ruleset, rules_dir):
-            findings.append({
-                "file": filename,
-                "level": "ERROR",
-                "rule": rule,
-                "msg": msg
-            })
-
-        # GOLDEN_FORMA
-        for rule, msg in _validate_golden_forma(ruleset, rules_dir):
-            findings.append({
-                "file": filename,
-                "level": "ERROR",
-                "rule": rule,
-                "msg": msg
-            })
-
-        # CODE_ONLY
-        for rule, msg in _validate_code_only(ruleset):
-            findings.append({
-                "file": filename,
-                "level": "ERROR",
-                "rule": rule,
-                "msg": msg
-            })
-
-        # REPRO (motor)
-        for rule, msg in _validate_repro(ruleset, rules_dir):
-            findings.append({
-                "file": filename,
-                "level": "ERROR",
-                "rule": rule,
-                "msg": msg
-            })
+        findings.extend(_validate_one_ruleset(filename, filepath, rules_dir))
 
     # Ordenar por (file, rule) para determinismo
     findings.sort(key=lambda f: (f["file"], f["rule"]))
