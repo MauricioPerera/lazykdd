@@ -24,8 +24,6 @@ def validate_changelog(changelog_path, reports_dir):
     Capa opcional: si changelog o reports_dir no existen/están vacíos,
     retorna findings INFO sin evaluar reglas ERROR.
     """
-    findings = []
-
     # Capa opcional: changelog ausente
     if not os.path.isfile(changelog_path):
         return [_finding(_to_posix(changelog_path), 'CHANGELOG_MISSING',
@@ -43,16 +41,25 @@ def validate_changelog(changelog_path, reports_dir):
                         'sin reportes CONTRACT-*', level='INFO')]
 
     # Extraer entradas del changelog: líneas que EMPIEZAN con **Contract <dígitos>
-    entries = _extract_entries(changelog_path)
-
-    # Recopilar NNs
+    entry_nns = dict(_extract_entries(changelog_path))  # nn -> [line_numbers]
     report_nns = set(reports.keys())
-    entry_nns = {}  # nn -> [line_numbers]
 
-    for nn, line_nums in entries.items():
-        entry_nns[nn] = line_nums
+    # ENTRY_MISSING (reportes sin entrada) + REPORT_MISSING/LINK_MISSING/ENTRY_DUP
+    findings = _check_entry_missing(report_nns, entry_nns, changelog_path,
+                                    reports)
+    findings += _check_entries(entry_nns, report_nns, changelog_path)
 
-    # ENTRY_MISSING: reportes sin entrada
+    # Ordenar por (file, rule, msg)
+    findings.sort(key=lambda f: (f['file'], f['rule'], f['msg']))
+
+    return findings
+
+
+def _check_entry_missing(report_nns, entry_nns, changelog_path, reports):
+    """Findings ENTRY_MISSING: reportes cuyo NN no tiene entrada
+    correspondiente en el changelog. Mismo formato de mensaje que hoy
+    (incluye la ruta relativa del reporte, con '/' como separador)."""
+    findings = []
     for nn in sorted(report_nns):
         if nn not in entry_nns:
             report_file = os.path.relpath(reports[nn],
@@ -63,8 +70,17 @@ def validate_changelog(changelog_path, reports_dir):
                 'ENTRY_MISSING',
                 'reporte {} sin entrada; archivo: {}'.format(nn, report_file)
             ))
+    return findings
 
-    # REPORT_MISSING + ENTRY_DUP + LINK_MISSING: entradas sin reporte, dupes, sin link
+
+def _check_entries(entry_nns, report_nns, changelog_path):
+    """Findings REPORT_MISSING (entrada sin reporte), LINK_MISSING
+    (hay reporte pero la primera linea de la entrada no linkea), y
+    ENTRY_DUP (un finding por ocurrencia EXTRA de un NN repetido --
+    la primera ocurrencia NO genera finding). Logica identica a hoy,
+    incluida la lectura de _read_entry_line/_has_link sobre
+    line_nums[0]."""
+    findings = []
     for nn in sorted(entry_nns.keys()):
         line_nums = entry_nns[nn]
 
@@ -94,10 +110,6 @@ def validate_changelog(changelog_path, reports_dir):
                     'ENTRY_DUP',
                     'entrada duplicada: {}'.format(nn)
                 ))
-
-    # Ordenar por (file, rule, msg)
-    findings.sort(key=lambda f: (f['file'], f['rule'], f['msg']))
-
     return findings
 
 
