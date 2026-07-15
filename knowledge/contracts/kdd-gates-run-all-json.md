@@ -9,9 +9,14 @@ intent: "Despachar el subcomando `gates run-all --json` al motor de gates existe
 target: scripts/kdd_cli.py
 signature: "def main(argv, stdout, run_all_fn=None) -> int:"
 test_command: "python -m unittest tests/test_kdd_cli.py"
+test_cwd: ../..
 budget:
   max_cyclomatic_complexity: 5
   max_nesting_depth: 2
+  cyclomatic_max: 5
+  nesting_max: 2
+  params_max: 3
+  lines_max: 30
 tests: "tests/test_kdd_cli.py"
 tests_sha256: "c47379bb8ad8ea050e87709c9d0c6c9bf4412c31998af9dc00d87855b3e8118f"
 touch_only: ['scripts/kdd_cli.py']
